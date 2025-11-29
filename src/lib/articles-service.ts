@@ -7,20 +7,28 @@ import { Article, ArticleSummary, Note } from '../types';
 const jsdomWindow = new JSDOM('').window as unknown as Window & typeof globalThis;
 const purifier = DOMPurify(jsdomWindow);
 
-export const sanitizePlainText = (value: unknown) =>
-  purifier.sanitize(String(value ?? '')).trim();
+type NoteInput = {
+  id: string | number;
+  text?: unknown;
+  top?: unknown;
+  left?: unknown;
+};
 
-const sanitizeHTML = (value: unknown) =>
-  purifier.sanitize(String(value ?? ''));
+const isNoteInput = (value: unknown): value is NoteInput => {
+  if (typeof value !== 'object' || value === null) return false;
+  const id = (value as { id?: unknown }).id;
+  return typeof id === 'string' || typeof id === 'number';
+};
+
+export const sanitizePlainText = (value: unknown) => purifier.sanitize(String(value ?? '')).trim();
+
+const sanitizeHTML = (value: unknown) => purifier.sanitize(String(value ?? ''));
 
 export const sanitizeTitle = (value: unknown, fallback = '') =>
   sanitizePlainText(value ?? fallback).slice(0, 500);
 
 export async function fetchArticleSummaries(): Promise<ArticleSummary[]> {
-  const snapshot = await db
-    .collection('annotations')
-    .orderBy('createdAt', 'desc')
-    .get();
+  const snapshot = await db.collection('annotations').orderBy('createdAt', 'desc').get();
 
   return snapshot.docs.map((doc) => {
     const data = doc.data();
@@ -33,8 +41,8 @@ export async function fetchArticleSummaries(): Promise<ArticleSummary[]> {
         typeof data.notesCount === 'number'
           ? data.notesCount
           : Array.isArray(data.notes)
-          ? data.notes.length
-          : 0,
+            ? data.notes.length
+            : 0,
       createdAt: data.createdAt?.toDate().toISOString(),
       updatedAt: data.updatedAt?.toDate().toISOString(),
     };
@@ -56,8 +64,8 @@ export async function fetchArticleById(id: string): Promise<Article | null> {
       typeof data.notesCount === 'number'
         ? data.notesCount
         : Array.isArray(data.notes)
-        ? data.notes.length
-        : 0,
+          ? data.notes.length
+          : 0,
     createdAt: data.createdAt?.toDate().toISOString(),
     updatedAt: data.updatedAt?.toDate().toISOString(),
   };
@@ -67,23 +75,18 @@ export function normalizeNotes(payload: unknown): Note[] {
   if (!Array.isArray(payload)) return [];
   return payload
     .map((note) => {
-      if (
-        typeof note !== 'object' ||
-        !note ||
-        typeof (note as any).id !== 'number' &&
-          typeof (note as any).id !== 'string'
-      ) {
-        return null;
-      }
-      return {
-        id: Number((note as any).id) || Date.now(),
-        text: sanitizePlainText((note as any).text),
-        top: Number((note as any).top) || 0,
-        left:
-          typeof (note as any).left === 'number'
-            ? (note as any).left
-            : undefined,
+      if (!isNoteInput(note)) return null;
+      const normalizedNote: Note = {
+        id: Number(note.id) || Date.now(),
+        text: sanitizePlainText(note.text),
+        top: Number(note.top) || 0,
       };
+
+      if (typeof note.left === 'number') {
+        normalizedNote.left = note.left;
+      }
+
+      return normalizedNote;
     })
     .filter(Boolean) as Note[];
 }

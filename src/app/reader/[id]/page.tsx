@@ -1,15 +1,15 @@
-import { HydrationBoundary, QueryClient, dehydrate } from "@tanstack/react-query";
-import { notFound } from "next/navigation";
-import ReaderClient from "../../../components/ReaderClient";
-import { fetchArticleById } from "../../../lib/articles-service";
+import { dehydrate } from '@tanstack/react-query';
+import { notFound } from 'next/navigation';
+import ReaderClient from '../../../components/ReaderClient';
+import { fetchArticleById } from '../../../lib/articles-service';
+import { ReactQueryHydrate } from '../../../components/ReactQueryHydrate';
+import { getQueryClient } from '../../../lib/get-query-client';
 
-export default async function ReaderPage({
-  params,
-}: {
-  params: Promise<{ id: string }>;
-}) {
+export const dynamic = 'force-dynamic';
+
+export default async function ReaderPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const queryClient = new QueryClient();
+  const queryClient = getQueryClient();
 
   const article = await fetchArticleById(id);
   if (!article) {
@@ -19,8 +19,8 @@ export default async function ReaderPage({
   queryClient.setQueryData(['article', id], article);
 
   return (
-    <HydrationBoundary state={dehydrate(queryClient)}>
+    <ReactQueryHydrate state={dehydrate(queryClient)}>
       <ReaderClient articleId={id} />
-    </HydrationBoundary>
+    </ReactQueryHydrate>
   );
 }
