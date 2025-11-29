@@ -1,47 +1,42 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Web Annotator
 
-## Getting Started
+Capture a readable snapshot of any page, store it in Firestore, and annotate it. This guide is tailored for Vercel deployments with Firebase.
 
-First, run the development server:
-
+## Environment Setup
+1) Copy `env.example` to `.env.local` and fill the values.
+2) Install dependencies and run locally:
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### Firebase Admin (server) credentials
+- Local-first: download the service account JSON (Firestore access) and set `FIREBASE_SERVICE_ACCOUNT_PATH` to its path (file is `.gitignore`d).
+- Vercel/serverless: files aren’t persisted, so set `FIREBASE_SERVICE_ACCOUNT_KEY` to a base64 of that JSON instead.  
+  - macOS: `base64 firebase-service-account.json | tr -d '\n'`  
+  - Linux: `base64 -w0 firebase-service-account.json`
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### Firebase client config (browser)
+From **Firebase Console → Project Settings → General → Your apps**, add to `.env.local` / Vercel:
+- `NEXT_PUBLIC_FIREBASE_API_KEY`
+- `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN`
+- `NEXT_PUBLIC_FIREBASE_PROJECT_ID`
+- `NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET`
+- `NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID`
+- `NEXT_PUBLIC_FIREBASE_APP_ID`
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Deploying to Vercel
+1) Connect the repo in Vercel.
+2) Add the env vars above. Use `FIREBASE_SERVICE_ACCOUNT_KEY` (base64) because Vercel can’t read a local file. Recommended: `PLAYWRIGHT_BROWSERS_PATH=0` so Vercel bundles Chromium with the function.
+3) Deploy. No service-account file needs to be checked in—the server uses the env var when a file isn’t present.
 
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
-
-
-## Features Planned
-
-- ability to add pdfs
-- ability to group websites/pdfs by projects
-- ability to open have relations in a canvas for a project, linking of documents across projects. and they can be interlinked
-- auth
-- collaboration project wise
-- ability to add YT video with comments on timestamp
-- AI integration
+## Feature Priority (ROI ÷ Effort)
+| Rank | Feature | Why this order |
+| --- | --- | --- |
+| 1 | Group websites/pdfs by projects | Fast to ship (metadata + UI filter) and immediately clarifies organization for users. |
+| 2 | Auth | Unlocks saved work per user and is a prerequisite for collaboration; Firebase Auth keeps effort moderate. |
+| 3 | AI integration to add comments/ask questions | High differentiation with moderate effort once content is in Firestore; can be scoped to Q&A first. |
+| 4 | Add PDFs/images and render as HTML | Expands core utility; moderate effort for parsing/upload but high value for research workflows. |
+| 5 | Add YT video with timestamped comments | Useful but narrower audience; medium effort (player + time-based annotations). |
+| 6 | Collaboration project-wise | Strong ROI but high complexity (permissions, concurrency), best after auth and grouping are solid. |
+| 7 | Canvas relations linking documents across projects | Visually compelling but highest complexity; build once data model and collaboration are stable. |

@@ -1,15 +1,21 @@
 import { initializeApp } from "firebase/app";
 import { getFirestore } from "firebase/firestore";
 
-// TODO: Replace the following with your app's Firebase project configuration
-// See: https://firebase.google.com/docs/web/setup#config-object
+const required = (key: string) => {
+  const value = process.env[key];
+  if (!value) {
+    throw new Error(`Missing Firebase config value for ${key}`);
+  }
+  return value;
+};
+
 const firebaseConfig = {
-  apiKey: "YOUR_API_KEY",
-  authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
-  projectId: "YOUR_PROJECT_ID",
-  storageBucket: "YOUR_PROJECT_ID.appspot.com",
-  messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
-  appId: "YOUR_APP_ID"
+  apiKey: required("NEXT_PUBLIC_FIREBASE_API_KEY"),
+  authDomain: required("NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN"),
+  projectId: required("NEXT_PUBLIC_FIREBASE_PROJECT_ID"),
+  storageBucket: required("NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET"),
+  messagingSenderId: required("NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID"),
+  appId: required("NEXT_PUBLIC_FIREBASE_APP_ID"),
 };
 
 // Initialize Firebase
