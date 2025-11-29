@@ -31,6 +31,24 @@ const getSizeClasses = (size: FontSize) => {
   }
 };
 
+let domPurifyInstance: ReturnType<typeof createDOMPurify> | null = null;
+
+const getDomPurify = () => {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+  if (!domPurifyInstance) {
+    domPurifyInstance = createDOMPurify(window);
+    domPurifyInstance.addHook('afterSanitizeAttributes', (node) => {
+      if ('target' in node) {
+        node.setAttribute('target', '_blank');
+        node.setAttribute('rel', 'noopener noreferrer');
+      }
+    });
+  }
+  return domPurifyInstance;
+};
+
 const ReaderViewComponent = ({
   content,
   title,
@@ -42,26 +60,10 @@ const ReaderViewComponent = ({
   byline?: string | null;
   settings: ReaderSettings;
 }) => {
-  const domPurify = useMemo(() => {
-    if (typeof window === 'undefined') {
-      return null;
-    }
-    const instance = createDOMPurify(window);
-    instance.addHook('afterSanitizeAttributes', (node) => {
-      if ('target' in node) {
-        node.setAttribute('target', '_blank');
-        node.setAttribute('rel', 'noopener noreferrer');
-      }
-    });
-    return instance;
-  }, []);
-
   const sanitizedContent = useMemo(() => {
-    if (!domPurify) {
-      return content;
-    }
-    return domPurify.sanitize(content);
-  }, [content, domPurify]);
+    const domPurify = getDomPurify();
+    return domPurify ? domPurify.sanitize(content) : content;
+  }, [content]);
   const themeClasses = getThemeClasses(settings.theme);
   const fontClasses = getFontClasses(settings.fontFamily);
   const sizeClasses = getSizeClasses(settings.fontSize);

@@ -1,29 +1,9 @@
 import { NextResponse } from 'next/server';
-import { db } from '../../../lib/firebase-admin';
-import { Timestamp } from 'firebase-admin/firestore';
+import { createArticleRecord, fetchArticleSummaries } from '../../../lib/articles-service';
 
 export async function GET() {
   try {
-    const snapshot = await db
-      .collection('annotations')
-      .orderBy('createdAt', 'desc')
-      .get();
-
-    const articles = snapshot.docs.map(doc => {
-      const data = doc.data();
-      return {
-        id: doc.id,
-        url: data.url,
-        title: data.title || data.url,
-        byline: data.byline,
-        createdAt: data.createdAt?.toDate().toISOString(),
-        updatedAt: data.updatedAt?.toDate().toISOString(),
-        notesCount: typeof data.notesCount === 'number'
-          ? data.notesCount
-          : (Array.isArray(data.notes) ? data.notes.length : 0),
-      };
-    });
-
+    const articles = await fetchArticleSummaries();
     return NextResponse.json(articles);
   } catch (error) {
     console.error('Error fetching articles:', error);
@@ -34,21 +14,14 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { url, title, byline, content } = body;
-    const normalizedTitle = (title?.trim() || url).slice(0, 500);
+    const { url, title, byline, content } = body || {};
 
-    const docRef = await db.collection('annotations').add({
-      url,
-      title: normalizedTitle,
-      byline,
-      content,
-      notes: [],
-      notesCount: 0,
-      createdAt: Timestamp.now(),
-      updatedAt: Timestamp.now(),
-    });
+    if (!url || !content) {
+      return NextResponse.json({ error: 'URL and content are required' }, { status: 400 });
+    }
 
-    return NextResponse.json({ id: docRef.id });
+    const id = await createArticleRecord({ url, title, byline, content });
+    return NextResponse.json({ id });
   } catch (error) {
     console.error('Error creating article:', error);
     return NextResponse.json({ error: 'Failed to create article' }, { status: 500 });
