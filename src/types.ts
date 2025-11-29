@@ -1,0 +1,32 @@
+export interface Note {
+  id: number;
+  text: string;
+  top: number;
+  left?: number;
+}
+
+export interface Article {
+  id: string;
+  url: string;
+  title: string;
+  byline?: string | null;
+  content: string;
+  notes?: Note[];
+  notesCount?: number;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export type ArticleSummary = Omit<Article, 'content' | 'notes'> & {
+  notesCount: number;
+};
+
+export type FontSize = 'xs' | 'small' | 'medium' | 'large' | 'xl' | '2xl';
+export type Theme = 'light' | 'dark' | 'sepia';
+export type FontFamily = 'sans' | 'serif' | 'mono';
+
+export interface ReaderSettings {
+  fontSize: FontSize;
+  theme: Theme;
+  fontFamily: FontFamily;
+}
