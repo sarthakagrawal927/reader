@@ -1,11 +1,11 @@
-"use client";
+'use client';
 
-import { useState, useRef, useEffect, useCallback, memo } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useRouter } from "next/navigation";
-import { Article, Note, ReaderSettings } from "../types";
-import { ReaderView, getThemeClasses } from "./ReaderView";
-import { AppearanceToolbar } from "./AppearanceToolbar";
+import { useState, useRef, useEffect, useCallback, memo, startTransition } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useRouter } from 'next/navigation';
+import { Article, Note, ReaderSettings } from '../types';
+import { ReaderView, getThemeClasses } from './ReaderView';
+import { AppearanceToolbar } from './AppearanceToolbar';
 
 const NOTE_MARKER_SIZE = 32;
 const NOTE_MARKER_RADIUS = NOTE_MARKER_SIZE / 2;
@@ -29,13 +29,16 @@ export default function ReaderClient({ articleId }: { articleId: string }) {
   const [settings, setSettings] = useState<ReaderSettings>({
     fontSize: 'medium',
     theme: 'dark',
-    fontFamily: 'sans'
+    fontFamily: 'sans',
   });
 
   const snapshotContainerRef = useRef<HTMLDivElement>(null);
   const [contentWidth, setContentWidth] = useState(0);
   const hasInitializedNotesRef = useRef(false);
-  const nextNoteIdRef = useRef<number>(Date.now());
+  const nextNoteIdRef = useRef<number>(0);
+  const draggingNoteIdRef = useRef<number | null>(null);
+  const dragMovedRef = useRef(false);
+  const lastArticleIdRef = useRef<string | null>(null);
 
   const {
     data: article,
@@ -56,10 +59,7 @@ export default function ReaderClient({ articleId }: { articleId: string }) {
     enabled: Boolean(id),
   });
 
-  const {
-    mutate: persistNotes,
-    isPending: isNotesSaving,
-  } = useMutation({
+  const { mutate: persistNotes, isPending: isNotesSaving } = useMutation({
     mutationFn: async (updatedNotes: Note[]) => {
       const response = await fetch(`/api/articles/${id}`, {
         method: 'PUT',
@@ -107,12 +107,18 @@ export default function ReaderClient({ articleId }: { articleId: string }) {
 
   useEffect(() => {
     if (!article) return;
-    setNotes(article.notes ?? []);
-    setTitleDraft(article.title || article.url || '');
-    setIsTitleEditing(false);
+    if (article.id === lastArticleIdRef.current) return;
+    lastArticleIdRef.current = article.id;
+
+    startTransition(() => {
+      setNotes(article.notes ?? []);
+      setTitleDraft(article.title || article.url || '');
+      setIsTitleEditing(false);
+    });
+
     const maxExistingId = (article.notes ?? []).reduce(
       (max, note) => (typeof note.id === 'number' ? Math.max(max, note.id) : max),
-      Date.now()
+      0
     );
     nextNoteIdRef.current = maxExistingId;
     hasInitializedNotesRef.current = false;
@@ -195,53 +201,100 @@ export default function ReaderClient({ articleId }: { articleId: string }) {
     document.body.style.userSelect = 'none';
   };
 
-  const handleContentClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
-    if (!isAnnotating || !snapshotContainerRef.current) return;
+  const handleContentClick = useCallback(
+    (e: React.MouseEvent<HTMLDivElement>) => {
+      if (!isAnnotating || !snapshotContainerRef.current) return;
 
-    const container = snapshotContainerRef.current;
-    const rect = container.getBoundingClientRect();
-    const scrollTop = container.scrollTop;
-    const scrollLeft = container.scrollLeft;
-    const clickY = e.clientY - rect.top + scrollTop;
-    const rawClickX = e.clientX - rect.left + scrollLeft;
-    const boundedCenterX = Math.max(
-      NOTE_MARKER_RADIUS,
-      Math.min(rawClickX, rect.width - NOTE_MARKER_RADIUS)
-    );
+      const container = snapshotContainerRef.current;
+      const rect = container.getBoundingClientRect();
+      const scrollTop = container.scrollTop;
+      const scrollLeft = container.scrollLeft;
+      const clickY = e.clientY - rect.top + scrollTop;
+      const rawClickX = e.clientX - rect.left + scrollLeft;
+      const boundedCenterX = Math.max(
+        NOTE_MARKER_RADIUS,
+        Math.min(rawClickX, rect.width - NOTE_MARKER_RADIUS)
+      );
 
-    nextNoteIdRef.current += 1;
-    const newNote: Note = {
-      id: nextNoteIdRef.current,
-      text: "",
-      top: clickY,
-      left: boundedCenterX,
-    };
+      nextNoteIdRef.current += 1;
+      const noteId = nextNoteIdRef.current;
+      const newNote: Note = {
+        id: noteId,
+        text: '',
+        top: clickY,
+        left: boundedCenterX,
+      };
 
-    setNotes((prev) => [...prev, newNote]);
-    setIsAnnotating(false);
-  }, [isAnnotating, snapshotContainerRef]);
+      setNotes((prev) => [...prev, newNote]);
+      setIsAnnotating(false);
+    },
+    [isAnnotating, snapshotContainerRef]
+  );
 
   const handleNoteChange = useCallback((id: number, text: string) => {
-    setNotes((prev) =>
-      prev.map((n) => (n.id === id ? { ...n, text } : n))
-    );
+    setNotes((prev) => prev.map((n) => (n.id === id ? { ...n, text } : n)));
   }, []);
+
+  const startNoteDrag = useCallback(
+    (id: number) => (e: React.MouseEvent<HTMLDivElement>) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const container = snapshotContainerRef.current;
+      if (!container) return;
+
+      draggingNoteIdRef.current = id;
+      dragMovedRef.current = false;
+
+      const handleMouseMove = (moveEvent: MouseEvent) => {
+        const rect = container.getBoundingClientRect();
+        const rawX = moveEvent.clientX - rect.left + container.scrollLeft;
+        const rawY = moveEvent.clientY - rect.top + container.scrollTop;
+        const boundedX = Math.max(
+          NOTE_MARKER_RADIUS,
+          Math.min(rawX, rect.width - NOTE_MARKER_RADIUS)
+        );
+        const boundedY = Math.max(NOTE_MARKER_RADIUS, rawY);
+
+        dragMovedRef.current = true;
+        setNotes((prev) =>
+          prev.map((n) => (n.id === id ? { ...n, top: boundedY, left: boundedX } : n))
+        );
+      };
+
+      const handleMouseUp = () => {
+        document.removeEventListener('mousemove', handleMouseMove);
+        document.removeEventListener('mouseup', handleMouseUp);
+        draggingNoteIdRef.current = null;
+        // Keep drag flag through click event; reset shortly after.
+        setTimeout(() => {
+          dragMovedRef.current = false;
+        }, 0);
+      };
+
+      document.addEventListener('mousemove', handleMouseMove);
+      document.addEventListener('mouseup', handleMouseUp);
+    },
+    [setNotes]
+  );
 
   const handleDeleteNote = useCallback((id: number) => {
     setNotes((prev) => prev.filter((n) => n.id !== id));
   }, []);
 
-  const scrollToNote = useCallback((top: number) => {
-    if (snapshotContainerRef.current) {
-      snapshotContainerRef.current.scrollTo({
-        top: top - 100, // Offset for visibility
-        behavior: "smooth",
-      });
-    }
-  }, [snapshotContainerRef]);
+  const scrollToNote = useCallback(
+    (top: number) => {
+      if (snapshotContainerRef.current) {
+        snapshotContainerRef.current.scrollTo({
+          top: top - 100, // Offset for visibility
+          behavior: 'smooth',
+        });
+      }
+    },
+    [snapshotContainerRef]
+  );
 
   const updateSettings = (newSettings: Partial<ReaderSettings>) => {
-    setSettings(prev => ({ ...prev, ...newSettings }));
+    setSettings((prev) => ({ ...prev, ...newSettings }));
   };
 
   const handleTitleBlur = () => {
@@ -251,9 +304,8 @@ export default function ReaderClient({ articleId }: { articleId: string }) {
     setIsTitleEditing(false);
   };
 
-  const titleErrorMessage = titleMutationError instanceof Error
-    ? titleMutationError.message
-    : 'Failed to save title';
+  const titleErrorMessage =
+    titleMutationError instanceof Error ? titleMutationError.message : 'Failed to save title';
 
   if (isArticleLoading) {
     return (
@@ -269,7 +321,9 @@ export default function ReaderClient({ articleId }: { articleId: string }) {
   if (articleError && !article) {
     return (
       <div className="flex h-screen flex-col items-center justify-center bg-gray-900 text-gray-200 gap-4">
-        <p>{articleError.message === 'NOT_FOUND' ? 'Document not found.' : 'Failed to load article.'}</p>
+        <p>
+          {articleError.message === 'NOT_FOUND' ? 'Document not found.' : 'Failed to load article.'}
+        </p>
         <button
           onClick={() => router.push('/')}
           className="px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-500 transition"
@@ -317,7 +371,7 @@ export default function ReaderClient({ articleId }: { articleId: string }) {
                     setIsTitleEditing(false);
                   }
                 }}
-                placeholder={article?.title || article?.url || "Untitled article"}
+                placeholder={article?.title || article?.url || 'Untitled article'}
                 maxLength={120}
                 autoFocus
                 className="w-full bg-transparent text-2xl font-semibold text-white border-b border-blue-500 focus:outline-none pb-1 transition-colors"
@@ -330,7 +384,7 @@ export default function ReaderClient({ articleId }: { articleId: string }) {
                 title="Click to edit title"
               >
                 <h1 className="text-2xl font-semibold text-white group-hover:text-blue-300 transition-colors leading-snug">
-                  {titleDraft.trim() || article?.title || article?.url || "Untitled article"}
+                  {titleDraft.trim() || article?.title || article?.url || 'Untitled article'}
                 </h1>
                 <p className="text-xs text-gray-500 opacity-0 group-hover:opacity-100 transition-opacity">
                   Click to edit title
@@ -348,18 +402,21 @@ export default function ReaderClient({ articleId }: { articleId: string }) {
 
           <div className="flex items-center gap-4 ml-auto">
             <AppearanceToolbar settings={settings} onUpdate={updateSettings} />
-            <span className={`text-xs font-medium px-2 py-1 rounded-full ${isNotesSaving ? 'bg-yellow-900/30 text-yellow-500' : 'bg-green-900/30 text-green-500'}`}>
+            <span
+              className={`text-xs font-medium px-2 py-1 rounded-full ${isNotesSaving ? 'bg-yellow-900/30 text-yellow-500' : 'bg-green-900/30 text-green-500'}`}
+            >
               {isNotesSaving ? 'Saving...' : 'Saved'}
             </span>
 
             <button
               onClick={() => setIsAnnotating(!isAnnotating)}
-              className={`px-4 py-2 rounded-lg font-medium transition-colors ${isAnnotating
-                ? "bg-yellow-500/20 text-yellow-400 border border-yellow-500/50"
-                : "bg-gray-800 text-gray-300 hover:bg-gray-700 border border-transparent"
-                }`}
+              className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                isAnnotating
+                  ? 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/50'
+                  : 'bg-gray-800 text-gray-300 hover:bg-gray-700 border border-transparent'
+              }`}
             >
-              {isAnnotating ? "Click to Place Note" : "+ Add Note"}
+              {isAnnotating ? 'Click to Place Note' : '+ Add Note'}
             </button>
           </div>
         </div>
@@ -382,8 +439,10 @@ export default function ReaderClient({ articleId }: { articleId: string }) {
             {notes.map((note, index) => (
               <div
                 key={note.id}
-                className={`absolute w-8 h-8 bg-yellow-500 rounded-full shadow-md flex items-center justify-center text-yellow-900 font-bold text-xs border-2 border-gray-900 cursor-pointer hover:scale-110 transition-transform z-20 transform -translate-x-1/2 ${
-                  contentWidth > 0 && Math.abs((note.left ?? NOTE_MARKER_RADIUS) - contentWidth / 2) <= contentWidth * (BLURRED_ZONE_PERCENT / 2)
+                className={`absolute w-8 h-8 bg-yellow-500 rounded-full shadow-md flex items-center justify-center text-yellow-900 font-bold text-xs border-2 border-gray-900 cursor-grab active:cursor-grabbing hover:scale-110 transition-transform z-20 transform -translate-x-1/2 ${
+                  contentWidth > 0 &&
+                  Math.abs((note.left ?? NOTE_MARKER_RADIUS) - contentWidth / 2) <=
+                    contentWidth * (BLURRED_ZONE_PERCENT / 2)
                     ? 'blur-[1px]'
                     : ''
                 }`}
@@ -393,8 +452,10 @@ export default function ReaderClient({ articleId }: { articleId: string }) {
                 }}
                 onClick={(e) => {
                   e.stopPropagation();
+                  if (dragMovedRef.current) return;
                   scrollToNote(note.top);
                 }}
+                onMouseDown={startNoteDrag(note.id)}
               >
                 {index + 1}
               </div>
@@ -431,7 +492,9 @@ export default function ReaderClient({ articleId }: { articleId: string }) {
           {notes.length === 0 && (
             <div className="text-center text-gray-500 mt-10">
               <p>No notes yet.</p>
-              <p className="text-sm">Click "+ Add Note" and select an area on the left.</p>
+              <p className="text-sm">
+                Click &quot;+ Add Note&quot; and select an area on the left.
+              </p>
             </div>
           )}
 
@@ -504,12 +567,14 @@ const NoteCard = memo(({ note, index, onScrollTo, onDelete, onChange }: NoteCard
           }}
           className="w-full text-left bg-gray-900/30 hover:bg-gray-900/60 transition-colors rounded-md p-3"
         >
-          <p className={`text-sm whitespace-pre-line overflow-hidden max-h-[4.5rem] ${note.text ? 'text-gray-200' : 'text-gray-500 italic'}`}>
-            {note.text || "Click to write your observation..."}
+          <p
+            className={`text-sm whitespace-pre-line overflow-hidden max-h-[4.5rem] ${note.text ? 'text-gray-200' : 'text-gray-500 italic'}`}
+          >
+            {note.text || 'Click to write your observation...'}
           </p>
         </button>
       )}
     </div>
   );
 });
-NoteCard.displayName = "NoteCard";
+NoteCard.displayName = 'NoteCard';
