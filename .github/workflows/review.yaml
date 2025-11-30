@@ -1,0 +1,13 @@
+name: AI Code Review
+on: [pull_request]
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Run AI Reviewer
+        uses: sarthakagrawal927/code-reviewer-action@v1 # <--- This is the action
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          # openai_api_key: ${{ secrets.OPENAI_API_KEY }} # Optional for now
