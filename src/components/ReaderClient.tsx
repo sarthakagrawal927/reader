@@ -587,17 +587,17 @@ export default function ReaderClient({ articleId }: { articleId: string }) {
   if (!article) return null;
 
   return (
-    <div className="flex h-screen bg-gray-900 font-sans overflow-hidden">
+    <div className="flex h-screen bg-gradient-to-b from-black via-gray-950 to-gray-900 font-sans text-gray-100 overflow-hidden p-4 md:p-6">
       {/* LEFT PANEL: Website Content */}
       <div
-        className="h-full flex flex-col bg-gray-900 relative"
+        className="h-full flex flex-col bg-gray-900/70 backdrop-blur border border-gray-800 rounded-2xl overflow-hidden shadow-2xl relative"
         style={{ width: `${leftPanelWidth}%` }}
       >
         {/* Header */}
-        <div className="p-4 border-b border-gray-800 bg-gray-900 z-10 shadow-sm flex flex-wrap items-center gap-4">
+        <div className="p-4 border-b border-gray-800 bg-gray-900/80 backdrop-blur-md z-10 shadow-md flex flex-wrap items-center gap-4">
           <button
             onClick={() => router.push('/')}
-            className="p-2 rounded-lg hover:bg-gray-800 text-gray-400 transition-colors"
+            className="p-2 rounded-lg bg-gray-800/60 hover:bg-gray-800 text-gray-200 transition-colors border border-gray-700"
             title="Back to Library"
           >
             ←
@@ -662,10 +662,10 @@ export default function ReaderClient({ articleId }: { articleId: string }) {
 
             <button
               onClick={() => setIsAnnotating(!isAnnotating)}
-              className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+              className={`px-4 py-2 rounded-lg font-medium transition-colors border ${
                 isAnnotating
-                  ? 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/50'
-                  : 'bg-gray-800 text-gray-300 hover:bg-gray-700 border border-transparent'
+                  ? 'bg-yellow-500/20 text-yellow-300 border-yellow-500/50'
+                  : 'bg-gray-800 text-gray-300 hover:bg-gray-700 border-gray-700'
               }`}
             >
               {isAnnotating ? 'Click to Place Note' : '+ Add Note'}
@@ -718,7 +718,7 @@ export default function ReaderClient({ articleId }: { articleId: string }) {
 
       {/* RESIZER */}
       <div
-        className="w-1 bg-gray-800 hover:bg-blue-500 cursor-col-resize transition-colors z-30 flex items-center justify-center relative group"
+        className="w-1 bg-gray-800 hover:bg-blue-500 cursor-col-resize transition-colors z-30 flex items-center justify-center relative group mx-1 rounded-full"
         onMouseDown={startResizing}
       >
         <div className="absolute inset-y-0 -left-2 -right-2 z-30" />
@@ -727,10 +727,10 @@ export default function ReaderClient({ articleId }: { articleId: string }) {
 
       {/* RIGHT PANEL: Notes */}
       <div
-        className="h-full bg-gray-900 flex flex-col shadow-xl z-20 border-l border-gray-800"
+        className="h-full bg-gray-900/70 backdrop-blur flex flex-col shadow-2xl z-20 border border-gray-800 rounded-2xl"
         style={{ width: `${100 - leftPanelWidth}%` }}
       >
-        <div className="p-4 border-b border-gray-800 bg-gray-900">
+        <div className="p-4 border-b border-gray-800 bg-gray-900/80">
           <h2 className="text-lg font-semibold text-gray-100">Notes</h2>
           <p className="text-sm text-gray-500">{notes.length} notes added</p>
         </div>

@@ -90,8 +90,12 @@ const normalizeStatus = (status: unknown): ArticleStatus => {
   return status === 'read' ? 'read' : 'in_progress';
 };
 
-export async function fetchArticleSummaries(): Promise<ArticleSummary[]> {
-  const snapshot = await db.collection('annotations').orderBy('createdAt', 'desc').get();
+export async function fetchArticleSummaries(projectId?: string): Promise<ArticleSummary[]> {
+  let collection = db.collection('annotations').orderBy('createdAt', 'desc');
+  if (projectId && projectId !== 'all') {
+    collection = db.collection('annotations').where('projectId', '==', projectId);
+  }
+  const snapshot = await collection.get();
 
   return snapshot.docs.map((doc) => {
     const data = doc.data();

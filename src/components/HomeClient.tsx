@@ -5,6 +5,27 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import { formatDate } from '../lib/utils';
 import { ArticleSummary, ArticleStatus, Project } from '../types';
+import { Button } from './ui/button';
+import { Input } from './ui/input';
+import { Select, SelectTrigger, SelectContent, SelectItem, SelectValue } from './ui/select';
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+} from './ui/dropdown-menu';
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from './ui/dialog';
+import { Label } from './ui/label';
+import { Badge } from './ui/badge';
+import { MoreVertical } from 'lucide-react';
 
 export default function HomeClient() {
   const [url, setUrl] = useState('');
@@ -222,8 +243,14 @@ export default function HomeClient() {
   useEffect(() => {
     if (!activeToolbarId) return;
     const closeMenu = () => setActiveToolbarId(null);
-    document.addEventListener('click', closeMenu);
-    return () => document.removeEventListener('click', closeMenu);
+    const handleGlobalClick = (event: MouseEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (target?.closest?.('[data-article-menu="true"]')) return;
+      if (target?.closest?.('[data-article-menu-trigger="true"]')) return;
+      closeMenu();
+    };
+    document.addEventListener('click', handleGlobalClick);
+    return () => document.removeEventListener('click', handleGlobalClick);
   }, [activeToolbarId]);
 
   const articlePendingDelete = pendingDeleteId
@@ -244,85 +271,123 @@ export default function HomeClient() {
   const moveTargets = (projects || []).filter((p) => p.id !== 'all');
 
   return (
-    <div className="min-h-screen bg-gray-900 p-8 font-sans text-gray-100">
-      <div className="max-w-5xl mx-auto">
+    <div className="min-h-screen bg-gradient-to-b from-black via-gray-950 to-gray-900 p-8 font-sans text-gray-100">
+      <div className="max-w-6xl mx-auto space-y-6">
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
           <div>
             <h1 className="text-3xl font-bold text-white">My Library</h1>
             <p className="text-gray-400 mt-1">Manage your annotated articles</p>
           </div>
 
-          <div className="w-full md:w-auto bg-gray-800/80 border border-gray-700 rounded-xl p-3 shadow-inner">
+          <div className="w-full md:w-auto bg-gray-900/70 border border-gray-800 rounded-xl p-4 shadow-lg backdrop-blur">
             <div className="flex flex-wrap items-center gap-3">
-              <label className="text-xs uppercase tracking-wide text-gray-500">Project</label>
-              <div className="relative">
-                <select
-                  value={selectedProjectId}
-                  onChange={(e) => setSelectedProjectId(e.target.value)}
-                  className="appearance-none bg-gray-900/80 border border-gray-600 text-white text-sm rounded-lg px-4 py-2 pr-8 shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  disabled={isProjectsLoading}
-                >
+              <span className="text-xs uppercase tracking-wide text-gray-500">Project</span>
+              <Select
+                value={selectedProjectId}
+                onValueChange={(value) => setSelectedProjectId(value)}
+                disabled={isProjectsLoading}
+              >
+                <SelectTrigger className="w-48 md:w-56">
+                  <SelectValue placeholder="All projects" />
+                </SelectTrigger>
+                <SelectContent>
                   {projectOptions.map((project) => (
-                    <option key={project.id} value={project.id}>
+                    <SelectItem key={project.id} value={project.id}>
                       {project.name}
-                    </option>
+                    </SelectItem>
                   ))}
-                </select>
-                <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-gray-500">
-                  ▾
-                </span>
-              </div>
+                </SelectContent>
+              </Select>
               {projectsError && (
                 <span className="text-xs text-red-400">Failed to load projects</span>
               )}
-              <button
-                type="button"
-                onClick={() => setIsProjectModalOpen(true)}
-                className="px-3 py-2 text-sm bg-blue-600 rounded-lg text-white hover:bg-blue-700 shadow-sm"
-              >
-                + New
-              </button>
+              <Dialog open={isProjectModalOpen} onOpenChange={setIsProjectModalOpen}>
+                <DialogTrigger asChild>
+                  <Button size="sm">+ New</Button>
+                </DialogTrigger>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>Create project</DialogTitle>
+                    <p className="text-sm text-gray-400">Organize your articles into a project.</p>
+                  </DialogHeader>
+                  <form
+                    className="space-y-4"
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      if (!newProjectName.trim() || createProjectMutation.isPending) return;
+                      createProjectMutation.mutate(newProjectName.trim());
+                    }}
+                  >
+                    <div className="space-y-2">
+                      <Label htmlFor="project-name">Project name</Label>
+                      <Input
+                        id="project-name"
+                        value={newProjectName}
+                        onChange={(e) => setNewProjectName(e.target.value)}
+                        placeholder="e.g. Research, Inspiration"
+                        autoFocus
+                      />
+                    </div>
+                    <DialogFooter className="flex justify-end gap-2">
+                      <Button
+                        variant="ghost"
+                        type="button"
+                        onClick={() => setIsProjectModalOpen(false)}
+                      >
+                        Cancel
+                      </Button>
+                      <Button type="submit" disabled={createProjectMutation.isPending}>
+                        {createProjectMutation.isPending ? 'Creating…' : 'Create'}
+                      </Button>
+                    </DialogFooter>
+                  </form>
+                </DialogContent>
+              </Dialog>
               {selectedProjectId !== 'all' && selectedProjectId !== 'default' && (
-                <button
-                  type="button"
+                <Button
+                  size="sm"
+                  variant="destructive"
                   onClick={() => deleteProjectMutation.mutate(selectedProjectId)}
-                  className="px-3 py-2 text-sm bg-red-600 rounded-lg text-white disabled:bg-red-800 shadow-sm"
                   disabled={deleteProjectMutation.isPending}
                 >
                   {deleteProjectMutation.isPending ? 'Deleting…' : 'Delete'}
-                </button>
+                </Button>
               )}
             </div>
           </div>
         </div>
 
-        <div className="bg-gray-800 p-6 rounded-xl shadow-lg border border-gray-700 mb-8">
+        <div className="bg-gray-900/80 p-6 rounded-2xl shadow-2xl border border-gray-800 mb-8 backdrop-blur">
           <h2 className="text-lg font-semibold text-white mb-4">Add New Article</h2>
           <form onSubmit={handleImport} className="flex flex-col gap-4 md:flex-row">
-            <input
+            <Input
               type="text"
               value={url}
               onChange={(e) => setUrl(e.target.value)}
               placeholder="Enter website URL (e.g. https://example.com/article)"
-              className="flex-grow px-4 py-3 bg-gray-900 border border-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all text-white placeholder-gray-500"
+              className="flex-grow"
               disabled={isImporting}
             />
-            <select
-              value={selectedProjectId}
-              onChange={(e) => setSelectedProjectId(e.target.value)}
-              className="bg-gray-900 border border-gray-700 text-white text-sm rounded-lg px-3 py-3 md:w-52 shadow-inner"
+            <Select
+              value={selectedProjectId === 'all' ? 'default' : selectedProjectId}
+              onValueChange={(val) => setSelectedProjectId(val)}
             >
-              {projectOptions
-                .filter((project) => project.id !== 'all')
-                .map((project) => (
-                  <option key={project.id} value={project.id}>
-                    {project.name}
-                  </option>
-                ))}
-            </select>
-            <button
+              <SelectTrigger className="md:w-52">
+                <SelectValue placeholder="Default" />
+              </SelectTrigger>
+              <SelectContent>
+                {projectOptions
+                  .filter((project) => project.id !== 'all')
+                  .map((project) => (
+                    <SelectItem key={project.id} value={project.id}>
+                      {project.name}
+                    </SelectItem>
+                  ))}
+              </SelectContent>
+            </Select>
+            <Button
               type="submit"
-              className="px-6 py-3 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 disabled:bg-blue-800 disabled:text-gray-400 transition-colors flex items-center gap-2 whitespace-nowrap"
+              className="px-6 py-3 font-medium flex items-center gap-2 whitespace-nowrap"
               disabled={isImporting}
             >
               {isImporting ? (
@@ -335,7 +400,7 @@ export default function HomeClient() {
                   <span>+</span> Import
                 </>
               )}
-            </button>
+            </Button>
           </form>
         </div>
 
@@ -367,13 +432,13 @@ export default function HomeClient() {
                   <div
                     key={article.id}
                     onClick={() => router.push(`/reader/${article.id}`)}
-                    className="group relative bg-gray-800 rounded-xl border border-gray-700 shadow-sm hover:shadow-md hover:border-blue-500 cursor-pointer transition-all overflow-hidden flex flex-col h-full"
+                    className="group relative bg-gradient-to-br from-gray-900 to-gray-950 rounded-2xl border border-gray-800 shadow-xl hover:shadow-2xl hover:border-blue-600 cursor-pointer transition-all overflow-hidden flex flex-col h-full"
                   >
                     <div className="p-6 flex-1 flex flex-col gap-3">
                       <div className="flex items-start gap-2">
                         <div className="flex-1 pr-2 min-w-0">
                           <h2
-                            className="text-xl font-semibold text-white line-clamp-2 break-words pr-6 group-hover:text-blue-400 transition-colors"
+                            className="text-xl font-semibold text-white line-clamp-2 break-words pr-6 group-hover:text-blue-300 transition-colors"
                             title={displayTitle}
                           >
                             {displayTitle}
@@ -382,92 +447,78 @@ export default function HomeClient() {
                             {article.url}
                           </p>
                           <div className="flex items-center gap-2 mt-2 text-xs text-gray-300">
-                            <span className="px-2 py-1 bg-gray-900 border border-gray-700 rounded-full">
-                              {projectName}
-                            </span>
-                            <button
-                              type="button"
+                            <Badge variant="default">{projectName}</Badge>
+                            <Badge
+                              variant={article.status === 'read' ? 'success' : 'warning'}
+                              className="cursor-pointer"
                               onClick={(e) => {
                                 e.stopPropagation();
                                 toggleStatus.mutate({ id: article.id, status: nextStatus });
                               }}
-                              className={`px-2 py-1 rounded-full border text-xs ${
-                                article.status === 'read'
-                                  ? 'bg-green-900/40 border-green-700 text-green-300'
-                                  : 'bg-yellow-900/40 border-yellow-700 text-yellow-300'
-                              }`}
                             >
                               {article.status === 'read' ? 'Read' : 'In Progress'}
-                            </button>
+                            </Badge>
                           </div>
                         </div>
-                        <div className="relative">
-                          <button
-                            type="button"
-                            className="p-2 rounded-full"
-                            aria-label="Open article actions"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setActiveToolbarId((prev) =>
-                                prev === article.id ? null : article.id
-                              );
-                            }}
-                          >
-                            ⋮
-                          </button>
-                          {activeToolbarId === article.id && (
-                            <div
-                              className="absolute right-0 mt-2 w-56 rounded-xl border border-gray-700 bg-gray-900 shadow-lg z-30 p-3 space-y-3"
+                        <DropdownMenu
+                          open={activeToolbarId === article.id}
+                          onOpenChange={(open) => setActiveToolbarId(open ? article.id : null)}
+                        >
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              variant="secondary"
+                              size="sm"
                               onClick={(e) => e.stopPropagation()}
+                              aria-label="Open article actions"
+                              className="gap-2"
                             >
-                              <button
-                                type="button"
-                                className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-blue-200 hover:text-white hover:bg-gray-800 disabled:opacity-50 border border-gray-800"
-                                onClick={() =>
-                                  toggleStatus.mutate({ id: article.id, status: nextStatus })
+                              <span>Actions</span>
+                              <MoreVertical className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" className="w-60">
+                            <DropdownMenuItem
+                              onSelect={(e) => {
+                                e.preventDefault();
+                                toggleStatus.mutate({ id: article.id, status: nextStatus });
+                              }}
+                            >
+                              {article.status === 'read' ? 'Mark In Progress' : 'Mark Read'}
+                            </DropdownMenuItem>
+                            <div className="px-2 py-1 space-y-1">
+                              <Label className="text-xs text-gray-400">Move to</Label>
+                              <Select
+                                value={article.projectId || 'default'}
+                                onValueChange={(value) =>
+                                  moveProjectMutation.mutate({ id: article.id, projectId: value })
                                 }
                               >
-                                {article.status === 'read' ? 'Mark In Progress' : 'Mark Read'}
-                              </button>
-                              <div className="space-y-1">
-                                <label className="text-xs text-gray-500 px-1">Move to</label>
-                                <div className="relative">
-                                  <select
-                                    className="w-full bg-gray-800 border border-gray-700 text-white text-xs rounded-lg px-2 py-2 pr-7"
-                                    value={article.projectId || 'default'}
-                                    onChange={(e) =>
-                                      moveProjectMutation.mutate({
-                                        id: article.id,
-                                        projectId: e.target.value,
-                                      })
-                                    }
-                                  >
-                                    {moveTargets.map((project) => (
-                                      <option key={project.id} value={project.id}>
-                                        {project.name}
-                                      </option>
-                                    ))}
-                                  </select>
-                                  <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-gray-500">
-                                    ▾
-                                  </span>
-                                </div>
-                              </div>
-                              <button
-                                type="button"
-                                className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-red-400 hover:text-red-200 hover:bg-gray-800 disabled:opacity-50"
-                                onClick={() => {
-                                  if (deletingId) return;
-                                  setPendingDeleteId(article.id);
-                                  setActiveToolbarId(null);
-                                }}
-                                disabled={deletingId === article.id}
-                              >
-                                <span>🗑️</span> Delete
-                              </button>
+                                <SelectTrigger className="h-9">
+                                  <SelectValue placeholder="Select project" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {moveTargets.map((project) => (
+                                    <SelectItem key={project.id} value={project.id}>
+                                      {project.name}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
                             </div>
-                          )}
-                        </div>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              className="text-red-300 focus:text-red-100"
+                              onSelect={(e) => {
+                                e.preventDefault();
+                                if (deletingId) return;
+                                setPendingDeleteId(article.id);
+                                setActiveToolbarId(null);
+                              }}
+                            >
+                              Delete
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                       </div>
                       {article.byline && (
                         <p
@@ -479,11 +530,8 @@ export default function HomeClient() {
                       )}
                     </div>
                     <div className="px-6 py-4 bg-gray-900/60 border-t border-gray-700 flex flex-wrap items-center gap-3 justify-between text-sm text-gray-400">
-                      <span className="flex items-center gap-1">
-                        <span className="w-2 h-2 rounded-full bg-yellow-500"></span>
-                        {article.notesCount} notes
-                      </span>
-                      <span>{formatDate(article.createdAt)}</span>
+                      <Badge variant="default">{article.notesCount} notes</Badge>
+                      <span className="text-gray-500">{formatDate(article.createdAt)}</span>
                     </div>
                   </div>
                 );
@@ -535,57 +583,6 @@ export default function HomeClient() {
                 )}
               </button>
             </div>
-          </div>
-        </div>
-      )}
-
-      {isProjectModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <div
-            className="absolute inset-0 bg-black/70 backdrop-blur-sm"
-            onClick={() => setIsProjectModalOpen(false)}
-          />
-          <div className="relative bg-gray-900 border border-gray-700 rounded-2xl shadow-2xl w-full max-w-md mx-4 p-6 space-y-4">
-            <div>
-              <h3 className="text-xl font-semibold text-white">Create project</h3>
-              <p className="text-sm text-gray-400 mt-2">Organize your articles into a project.</p>
-            </div>
-            <form
-              className="space-y-4"
-              onSubmit={(e) => {
-                e.preventDefault();
-                if (!newProjectName.trim() || createProjectMutation.isPending) return;
-                createProjectMutation.mutate(newProjectName.trim());
-              }}
-            >
-              <div>
-                <label className="text-sm text-gray-400 block mb-2">Project name</label>
-                <input
-                  type="text"
-                  value={newProjectName}
-                  onChange={(e) => setNewProjectName(e.target.value)}
-                  placeholder="e.g. Research, Inspiration"
-                  className="w-full bg-gray-800 border border-gray-700 text-white rounded-lg px-3 py-2"
-                  autoFocus
-                />
-              </div>
-              <div className="flex justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => setIsProjectModalOpen(false)}
-                  className="px-4 py-2 text-sm rounded-lg bg-gray-800 text-gray-200 hover:bg-gray-700"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 text-sm rounded-lg bg-blue-600 text-white disabled:bg-blue-800"
-                  disabled={createProjectMutation.isPending}
-                >
-                  {createProjectMutation.isPending ? 'Creating...' : 'Create'}
-                </button>
-              </div>
-            </form>
           </div>
         </div>
       )}

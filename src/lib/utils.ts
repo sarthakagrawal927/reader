@@ -5,5 +5,11 @@ export function formatDate(dateInput?: string | number | Date | null): string {
     day: '2-digit',
     month: 'short',
     year: 'numeric',
-  }).format(date).replace(/ /g, '-');
+  })
+    .format(date)
+    .replace(/ /g, '-');
+}
+
+export function cn(...classes: Array<string | false | null | undefined>) {
+  return classes.filter(Boolean).join(' ');
 }

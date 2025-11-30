@@ -11,7 +11,7 @@ export default async function Page() {
 
   await queryClient.prefetchQuery({
     queryKey: ['articles'],
-    queryFn: fetchArticleSummaries,
+    queryFn: () => fetchArticleSummaries(),
   });
   await queryClient.prefetchQuery({
     queryKey: ['projects'],
