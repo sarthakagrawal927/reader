@@ -47,3 +47,5 @@ From **Firebase Console → Project Settings → General → Your apps**, add to
 | 6    | Collaboration project-wise                         | Strong ROI but high complexity (permissions, concurrency), best after auth and grouping are solid.        |
 | 7    | Canvas relations linking documents across projects | Visually compelling but highest complexity; build once data model and collaboration are stable.           |
 | 8    | Add option to export as markdown/pdf               | Easy to implement and adds value for users.                                                               |
+
+testing github actions
