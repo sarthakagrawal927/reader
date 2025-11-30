@@ -2,7 +2,7 @@ import { Timestamp } from 'firebase-admin/firestore';
 import sanitizeHtml from 'sanitize-html';
 import type { IOptions } from 'sanitize-html';
 import { db } from './firebase-admin';
-import { Article, ArticleSummary, Note } from '../types';
+import { Article, ArticleStatus, ArticleSummary, Note, Project } from '../types';
 
 const baseAllowedAttributes = sanitizeHtml.defaults.allowedAttributes ?? {};
 const plainTextSanitizeOptions: IOptions = {
@@ -83,16 +83,26 @@ const sanitizeHTML = (value: unknown) => sanitizeHtml(String(value ?? ''), htmlS
 export const sanitizeTitle = (value: unknown, fallback = '') =>
   sanitizePlainText(value ?? fallback).slice(0, 500);
 
+const DEFAULT_PROJECT_ID = 'default';
+const DEFAULT_PROJECT_NAME = 'Default';
+
+const normalizeStatus = (status: unknown): ArticleStatus => {
+  return status === 'read' ? 'read' : 'in_progress';
+};
+
 export async function fetchArticleSummaries(): Promise<ArticleSummary[]> {
   const snapshot = await db.collection('annotations').orderBy('createdAt', 'desc').get();
 
   return snapshot.docs.map((doc) => {
     const data = doc.data();
+    const status = normalizeStatus(data.status);
     return {
       id: doc.id,
       url: data.url,
       title: data.title || data.url,
       byline: data.byline,
+      projectId: data.projectId || DEFAULT_PROJECT_ID,
+      status,
       notesCount:
         typeof data.notesCount === 'number'
           ? data.notesCount
@@ -109,6 +119,7 @@ export async function fetchArticleById(id: string): Promise<Article | null> {
   const doc = await db.collection('annotations').doc(id).get();
   if (!doc.exists) return null;
   const data = doc.data()!;
+  const status = normalizeStatus(data.status);
   return {
     id: doc.id,
     url: data.url,
@@ -116,6 +127,8 @@ export async function fetchArticleById(id: string): Promise<Article | null> {
     byline: data.byline,
     content: data.content,
     notes: data.notes ?? [],
+    projectId: data.projectId || DEFAULT_PROJECT_ID,
+    status,
     notesCount:
       typeof data.notesCount === 'number'
         ? data.notesCount
@@ -154,6 +167,7 @@ export function sanitizeArticlePayload(payload: {
   title?: string;
   byline?: string;
   content: string;
+  projectId?: string;
 }) {
   const sanitizedUrl = sanitizePlainText(payload.url);
   if (!sanitizedUrl) {
@@ -165,6 +179,7 @@ export function sanitizeArticlePayload(payload: {
     title: sanitizeTitle(payload.title, sanitizedUrl),
     byline: sanitizePlainText(payload.byline || ''),
     content: sanitizeHTML(payload.content),
+    projectId: sanitizePlainText(payload.projectId || DEFAULT_PROJECT_ID) || DEFAULT_PROJECT_ID,
   };
 }
 
@@ -173,6 +188,7 @@ export async function createArticleRecord(payload: {
   title?: string;
   byline?: string;
   content: string;
+  projectId?: string;
 }) {
   const sanitized = sanitizeArticlePayload(payload);
   const now = Timestamp.now();
@@ -180,8 +196,88 @@ export async function createArticleRecord(payload: {
     ...sanitized,
     notes: [],
     notesCount: 0,
+    status: 'in_progress',
     createdAt: now,
     updatedAt: now,
   });
   return docRef.id;
+}
+
+const sanitizeProjectName = (value: unknown) => sanitizeTitle(value, DEFAULT_PROJECT_NAME);
+
+export async function ensureDefaultProject(): Promise<Project> {
+  const defaultRef = db.collection('projects').doc(DEFAULT_PROJECT_ID);
+  const snapshot = await defaultRef.get();
+  if (!snapshot.exists) {
+    const now = Timestamp.now();
+    await defaultRef.set({
+      name: DEFAULT_PROJECT_NAME,
+      createdAt: now,
+      updatedAt: now,
+    });
+  }
+  const fresh = await defaultRef.get();
+  const data = fresh.data() || {};
+  return {
+    id: DEFAULT_PROJECT_ID,
+    name: data.name || DEFAULT_PROJECT_NAME,
+    createdAt: data.createdAt?.toDate().toISOString(),
+    updatedAt: data.updatedAt?.toDate().toISOString(),
+  };
+}
+
+export async function fetchProjects(): Promise<Project[]> {
+  const defaultProject = await ensureDefaultProject();
+  const snapshot = await db.collection('projects').orderBy('createdAt', 'desc').get();
+  const projects: Project[] = snapshot.docs.map((doc) => {
+    const data = doc.data();
+    return {
+      id: doc.id,
+      name: data.name || DEFAULT_PROJECT_NAME,
+      createdAt: data.createdAt?.toDate().toISOString(),
+      updatedAt: data.updatedAt?.toDate().toISOString(),
+    };
+  });
+
+  const merged = [defaultProject, ...projects.filter((p) => p.id !== DEFAULT_PROJECT_ID)];
+  const seen = new Set<string>();
+  return merged.filter((p) => {
+    if (seen.has(p.id)) return false;
+    seen.add(p.id);
+    return true;
+  });
+}
+
+export async function createProject(name: string): Promise<string> {
+  const sanitizedName = sanitizeProjectName(name);
+  if (!sanitizedName) {
+    throw new Error('Project name is required');
+  }
+  const now = Timestamp.now();
+  const ref = await db.collection('projects').add({
+    name: sanitizedName,
+    createdAt: now,
+    updatedAt: now,
+  });
+  return ref.id;
+}
+
+export async function moveArticlesToDefault(projectId: string) {
+  if (projectId === DEFAULT_PROJECT_ID) return;
+  const snapshot = await db.collection('annotations').where('projectId', '==', projectId).get();
+  const batch = db.batch();
+  snapshot.forEach((doc) => {
+    batch.update(doc.ref, { projectId: DEFAULT_PROJECT_ID, updatedAt: Timestamp.now() });
+  });
+  if (!snapshot.empty) {
+    await batch.commit();
+  }
+}
+
+export async function deleteProject(projectId: string) {
+  if (projectId === DEFAULT_PROJECT_ID) {
+    throw new Error('Cannot delete default project');
+  }
+  await moveArticlesToDefault(projectId);
+  await db.collection('projects').doc(projectId).delete();
 }

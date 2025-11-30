@@ -2,11 +2,12 @@ import { NextResponse } from 'next/server';
 import { Timestamp } from 'firebase-admin/firestore';
 import { db } from '../../../../lib/firebase-admin';
 import { fetchArticleById, normalizeNotes, sanitizeTitle } from '../../../../lib/articles-service';
+import { ArticleStatus } from '../../../../types';
 
-export async function GET(
-  request: Request,
-  { params }: { params: Promise<{ id: string }> }
-) {
+const normalizeStatus = (status: unknown): ArticleStatus | null =>
+  status === 'read' || status === 'in_progress' ? status : null;
+
+export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params;
     const article = await fetchArticleById(id);
@@ -21,17 +22,14 @@ export async function GET(
   }
 }
 
-export async function PUT(
-  request: Request,
-  { params }: { params: Promise<{ id: string }> }
-) {
+export async function PUT(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params;
     const body = await request.json();
-    const { notes, title } = body || {};
+    const { notes, title, status, projectId } = body || {};
 
     const docRef = db.collection('annotations').doc(id);
-    const updateData: Record<string, any> = {
+    const updateData: Record<string, unknown> = {
       updatedAt: Timestamp.now(),
     };
 
@@ -48,6 +46,15 @@ export async function PUT(
       }
     }
 
+    const normalizedStatus = normalizeStatus(status);
+    if (normalizedStatus) {
+      updateData.status = normalizedStatus;
+    }
+
+    if (typeof projectId === 'string' && projectId.trim()) {
+      updateData.projectId = projectId.trim();
+    }
+
     await docRef.update(updateData);
 
     return NextResponse.json({ success: true });
@@ -57,10 +64,7 @@ export async function PUT(
   }
 }
 
-export async function DELETE(
-  request: Request,
-  { params }: { params: Promise<{ id: string }> }
-) {
+export async function DELETE(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params;
     const docRef = db.collection('annotations').doc(id);

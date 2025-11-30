@@ -1,6 +1,6 @@
 import { dehydrate } from '@tanstack/react-query';
 import HomeClient from '../components/HomeClient';
-import { fetchArticleSummaries } from '../lib/articles-service';
+import { fetchArticleSummaries, fetchProjects } from '../lib/articles-service';
 import { ReactQueryHydrate } from '../components/ReactQueryHydrate';
 import { getQueryClient } from '../lib/get-query-client';
 
@@ -12,6 +12,10 @@ export default async function Page() {
   await queryClient.prefetchQuery({
     queryKey: ['articles'],
     queryFn: fetchArticleSummaries,
+  });
+  await queryClient.prefetchQuery({
+    queryKey: ['projects'],
+    queryFn: fetchProjects,
   });
 
   return (

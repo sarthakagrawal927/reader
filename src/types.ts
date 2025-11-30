@@ -18,6 +18,8 @@ export interface Article {
   content: string;
   notes?: Note[];
   notesCount?: number;
+  projectId?: string;
+  status?: ArticleStatus;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -29,9 +31,17 @@ export type ArticleSummary = Omit<Article, 'content' | 'notes'> & {
 export type FontSize = 'xs' | 'small' | 'medium' | 'large' | 'xl' | '2xl';
 export type Theme = 'light' | 'dark' | 'sepia';
 export type FontFamily = 'sans' | 'serif' | 'mono';
+export type ArticleStatus = 'in_progress' | 'read';
 
 export interface ReaderSettings {
   fontSize: FontSize;
   theme: Theme;
   fontFamily: FontFamily;
+}
+
+export interface Project {
+  id: string;
+  name: string;
+  createdAt?: string;
+  updatedAt?: string;
 }
