@@ -1,15 +1,39 @@
 'use client';
 
-import { useState, useRef, useEffect, useCallback, memo, startTransition } from 'react';
+import { useState, useRef, useEffect, useCallback, memo, startTransition, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import { Article, Note, ReaderSettings } from '../types';
 import { ReaderView, getThemeClasses } from './ReaderView';
 import { AppearanceToolbar } from './AppearanceToolbar';
 
-const NOTE_MARKER_SIZE = 32;
-const NOTE_MARKER_RADIUS = NOTE_MARKER_SIZE / 2;
-const BLURRED_ZONE_PERCENT = 0.2;
+const ANNOTATABLE_SELECTOR = [
+  'p',
+  'h1',
+  'h2',
+  'h3',
+  'h4',
+  'h5',
+  'h6',
+  'li',
+  'blockquote',
+  'pre',
+  'figure',
+  'figcaption',
+  'img',
+  'video',
+  'iframe',
+  'code',
+  'table',
+  'thead',
+  'tbody',
+  'tr',
+  'td',
+  'th',
+].join(', ');
+
+const SCROLL_OFFSET = 80;
 
 export default function ReaderClient({ articleId }: { articleId: string }) {
   const id = articleId;
@@ -33,11 +57,22 @@ export default function ReaderClient({ articleId }: { articleId: string }) {
   });
 
   const snapshotContainerRef = useRef<HTMLDivElement>(null);
-  const [contentWidth, setContentWidth] = useState(0);
-  const hasInitializedNotesRef = useRef(false);
-  const nextNoteIdRef = useRef<number>(0);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const annotatableElementsRef = useRef<HTMLElement[]>([]);
+  const markerRefs = useRef<Map<number, HTMLElement>>(new Map());
   const draggingNoteIdRef = useRef<number | null>(null);
   const dragMovedRef = useRef(false);
+  const ignoreMarkerClickRef = useRef(false);
+  const dragGhostRef = useRef<HTMLDivElement | null>(null);
+  const dragAnimationFrameRef = useRef<number | null>(null);
+  const [activeTooltip, setActiveTooltip] = useState<{
+    text: string;
+    x: number;
+    y: number;
+  } | null>(null);
+  const [annotatableElements, setAnnotatableElements] = useState<HTMLElement[]>([]);
+  const hasInitializedNotesRef = useRef(false);
+  const nextNoteIdRef = useRef<number>(0);
   const lastArticleIdRef = useRef<string | null>(null);
 
   const {
@@ -151,23 +186,41 @@ export default function ReaderClient({ articleId }: { articleId: string }) {
     return () => clearTimeout(timeoutId);
   }, [notes, id, isArticleLoading, persistNotes]);
 
-  useEffect(() => {
-    const updateWidth = () => {
-      if (snapshotContainerRef.current) {
-        setContentWidth(snapshotContainerRef.current.clientWidth);
-      }
-    };
+  const refreshAnnotationTargets = useCallback(() => {
+    const root = contentRef.current;
+    if (!root) return;
 
-    updateWidth();
-    window.addEventListener('resize', updateWidth);
-    return () => window.removeEventListener('resize', updateWidth);
+    root.querySelectorAll<HTMLElement>('[data-note-anchor-index]').forEach((el) => {
+      el.removeAttribute('data-note-anchor-index');
+      el.classList.remove('annotation-target');
+    });
+
+    const elements = Array.from(root.querySelectorAll<HTMLElement>(ANNOTATABLE_SELECTOR)).filter(
+      (el) => !el.classList.contains('annotation-mount')
+    );
+    annotatableElementsRef.current = elements;
+    setAnnotatableElements(elements);
+
+    elements.forEach((el, index) => {
+      el.dataset.noteAnchorIndex = String(index);
+      el.classList.add('annotation-target');
+    });
   }, []);
 
   useEffect(() => {
-    if (snapshotContainerRef.current) {
-      setContentWidth(snapshotContainerRef.current.clientWidth);
-    }
-  }, [leftPanelWidth]);
+    refreshAnnotationTargets();
+  }, [
+    article?.id,
+    article?.content,
+    settings.fontSize,
+    settings.fontFamily,
+    settings.theme,
+    refreshAnnotationTargets,
+  ]);
+
+  useEffect(() => {
+    refreshAnnotationTargets();
+  }, [notes, refreshAnnotationTargets]);
 
   // Resizing Logic
   useEffect(() => {
@@ -201,96 +254,156 @@ export default function ReaderClient({ articleId }: { articleId: string }) {
     document.body.style.userSelect = 'none';
   };
 
+  const getAnchorElementFromEvent = useCallback(
+    (event: React.MouseEvent<HTMLDivElement>) => {
+      if (!contentRef.current) return null;
+
+      if (!annotatableElementsRef.current.length) {
+        refreshAnnotationTargets();
+      }
+
+      const directTarget = (event.target as HTMLElement | null)?.closest?.(
+        '[data-note-anchor-index]'
+      ) as HTMLElement | null;
+
+      if (directTarget && contentRef.current.contains(directTarget)) {
+        return directTarget;
+      }
+
+      const { clientX, clientY } = event;
+      let closest: { element: HTMLElement; distance: number } | null = null;
+
+      for (const element of annotatableElementsRef.current) {
+        const rect = element.getBoundingClientRect();
+        const dx = Math.max(rect.left - clientX, 0, clientX - rect.right);
+        const dy = Math.max(rect.top - clientY, 0, clientY - rect.bottom);
+        const distance = Math.sqrt(dx * dx + dy * dy);
+
+        if (!closest || distance < closest.distance) {
+          closest = { element, distance };
+        }
+      }
+
+      return closest?.element ?? null;
+    },
+    [refreshAnnotationTargets]
+  );
+
+  const getAnchorElementFromPoint = useCallback(
+    (clientX: number, clientY: number) => {
+      if (!annotatableElementsRef.current.length) {
+        refreshAnnotationTargets();
+      }
+
+      const hitElements = document.elementsFromPoint(clientX, clientY);
+      const directMatch = hitElements.find(
+        (el) =>
+          el instanceof HTMLElement &&
+          typeof (el as HTMLElement).dataset.noteAnchorIndex === 'string' &&
+          contentRef.current?.contains(el)
+      ) as HTMLElement | undefined;
+      if (directMatch) return directMatch;
+
+      let closest: { element: HTMLElement; distance: number } | null = null;
+
+      for (const element of annotatableElementsRef.current) {
+        const rect = element.getBoundingClientRect();
+        const dx = Math.max(rect.left - clientX, 0, clientX - rect.right);
+        const dy = Math.max(rect.top - clientY, 0, clientY - rect.bottom);
+        const distance = Math.sqrt(dx * dx + dy * dy);
+
+        if (!closest || distance < closest.distance) {
+          closest = { element, distance };
+        }
+      }
+
+      return closest?.element ?? null;
+    },
+    [refreshAnnotationTargets]
+  );
+
+  const buildAnchorPayload = useCallback((anchorElement: HTMLElement) => {
+    const anchorIndex = Number(anchorElement.dataset.noteAnchorIndex);
+    return {
+      elementIndex: Number.isFinite(anchorIndex) ? anchorIndex : 0,
+      tagName: anchorElement.tagName.toLowerCase(),
+      textPreview:
+        anchorElement.textContent?.trim().replace(/\s+/g, ' ').slice(0, 200) || undefined,
+    };
+  }, []);
+
   const handleContentClick = useCallback(
     (e: React.MouseEvent<HTMLDivElement>) => {
-      if (!isAnnotating || !snapshotContainerRef.current) return;
+      if (!isAnnotating) return;
 
-      const container = snapshotContainerRef.current;
-      const rect = container.getBoundingClientRect();
-      const scrollTop = container.scrollTop;
-      const scrollLeft = container.scrollLeft;
-      const clickY = e.clientY - rect.top + scrollTop;
-      const rawClickX = e.clientX - rect.left + scrollLeft;
-      const boundedCenterX = Math.max(
-        NOTE_MARKER_RADIUS,
-        Math.min(rawClickX, rect.width - NOTE_MARKER_RADIUS)
-      );
+      const anchorElement = getAnchorElementFromEvent(e);
+      if (!anchorElement) {
+        setIsAnnotating(false);
+        return;
+      }
+
+      const anchorPayload = buildAnchorPayload(anchorElement);
 
       nextNoteIdRef.current += 1;
       const noteId = nextNoteIdRef.current;
       const newNote: Note = {
         id: noteId,
         text: '',
-        top: clickY,
-        left: boundedCenterX,
+        anchor: anchorPayload,
       };
 
       setNotes((prev) => [...prev, newNote]);
       setIsAnnotating(false);
     },
-    [isAnnotating, snapshotContainerRef]
+    [buildAnchorPayload, getAnchorElementFromEvent, isAnnotating]
   );
 
   const handleNoteChange = useCallback((id: number, text: string) => {
     setNotes((prev) => prev.map((n) => (n.id === id ? { ...n, text } : n)));
   }, []);
 
-  const startNoteDrag = useCallback(
-    (id: number) => (e: React.MouseEvent<HTMLDivElement>) => {
-      e.preventDefault();
-      e.stopPropagation();
-      const container = snapshotContainerRef.current;
-      if (!container) return;
-
-      draggingNoteIdRef.current = id;
-      dragMovedRef.current = false;
-
-      const handleMouseMove = (moveEvent: MouseEvent) => {
-        const rect = container.getBoundingClientRect();
-        const rawX = moveEvent.clientX - rect.left + container.scrollLeft;
-        const rawY = moveEvent.clientY - rect.top + container.scrollTop;
-        const boundedX = Math.max(
-          NOTE_MARKER_RADIUS,
-          Math.min(rawX, rect.width - NOTE_MARKER_RADIUS)
-        );
-        const boundedY = Math.max(NOTE_MARKER_RADIUS, rawY);
-
-        dragMovedRef.current = true;
-        setNotes((prev) =>
-          prev.map((n) => (n.id === id ? { ...n, top: boundedY, left: boundedX } : n))
-        );
-      };
-
-      const handleMouseUp = () => {
-        document.removeEventListener('mousemove', handleMouseMove);
-        document.removeEventListener('mouseup', handleMouseUp);
-        draggingNoteIdRef.current = null;
-        // Keep drag flag through click event; reset shortly after.
-        setTimeout(() => {
-          dragMovedRef.current = false;
-        }, 0);
-      };
-
-      document.addEventListener('mousemove', handleMouseMove);
-      document.addEventListener('mouseup', handleMouseUp);
-    },
-    [setNotes]
-  );
-
   const handleDeleteNote = useCallback((id: number) => {
     setNotes((prev) => prev.filter((n) => n.id !== id));
   }, []);
 
   const scrollToNote = useCallback(
-    (top: number) => {
-      if (snapshotContainerRef.current) {
-        snapshotContainerRef.current.scrollTo({
-          top: top - 100, // Offset for visibility
+    (note: Note) => {
+      const container = snapshotContainerRef.current;
+      if (!container) return;
+
+      const markerEl = markerRefs.current.get(note.id);
+      if (markerEl) {
+        const markerRect = markerEl.getBoundingClientRect();
+        const containerRect = container.getBoundingClientRect();
+        const scrollTarget =
+          markerRect.top - containerRect.top + container.scrollTop - SCROLL_OFFSET;
+        container.scrollTo({
+          top: Math.max(scrollTarget, 0),
+          behavior: 'smooth',
+        });
+        return;
+      }
+
+      if (!annotatableElementsRef.current.length) {
+        refreshAnnotationTargets();
+      }
+
+      const anchorIndex = note.anchor?.elementIndex;
+      const anchorElement =
+        typeof anchorIndex === 'number' ? annotatableElementsRef.current[anchorIndex] : null;
+
+      if (anchorElement) {
+        const anchorRect = anchorElement.getBoundingClientRect();
+        const containerRect = container.getBoundingClientRect();
+        const scrollTarget =
+          anchorRect.top - containerRect.top + container.scrollTop - SCROLL_OFFSET;
+        container.scrollTo({
+          top: Math.max(scrollTarget, 0),
           behavior: 'smooth',
         });
       }
     },
-    [snapshotContainerRef]
+    [refreshAnnotationTargets]
   );
 
   const updateSettings = (newSettings: Partial<ReaderSettings>) => {
@@ -306,6 +419,143 @@ export default function ReaderClient({ articleId }: { articleId: string }) {
 
   const titleErrorMessage =
     titleMutationError instanceof Error ? titleMutationError.message : 'Failed to save title';
+
+  const registerMarker = useCallback((noteId: number, el: HTMLElement | null) => {
+    const map = markerRefs.current;
+    if (el) {
+      map.set(noteId, el);
+    } else {
+      map.delete(noteId);
+    }
+  }, []);
+
+  const showTooltip = useCallback((text: string, e: React.MouseEvent | MouseEvent) => {
+    setActiveTooltip({
+      text,
+      x: e.clientX + 12,
+      y: e.clientY - 14,
+    });
+  }, []);
+
+  const moveTooltip = useCallback((e: MouseEvent) => {
+    setActiveTooltip((prev) => (prev ? { ...prev, x: e.clientX + 12, y: e.clientY - 14 } : prev));
+  }, []);
+
+  const hideTooltip = useCallback(() => {
+    setActiveTooltip(null);
+  }, []);
+
+  const startMarkerDrag = useCallback(
+    (note: Note, displayIndex: number) => (event: React.MouseEvent) => {
+      event.preventDefault();
+      event.stopPropagation();
+      hideTooltip();
+      draggingNoteIdRef.current = note.id;
+      dragMovedRef.current = false;
+      const startX = event.clientX;
+      const startY = event.clientY;
+
+      const originalUserSelect = document.body.style.userSelect;
+      const originalCursor = document.body.style.cursor;
+      document.body.style.userSelect = 'none';
+      document.body.style.cursor = 'grabbing';
+
+      if (!dragGhostRef.current && typeof document !== 'undefined') {
+        const ghost = document.createElement('div');
+        ghost.className = 'annotation-drag-ghost';
+        dragGhostRef.current = ghost;
+        document.body.appendChild(ghost);
+      }
+
+      const updateGhostPosition = (x: number, y: number) => {
+        if (!dragGhostRef.current) return;
+        dragGhostRef.current.style.left = `${x}px`;
+        dragGhostRef.current.style.top = `${y}px`;
+      };
+
+      const scheduleGhostUpdate = (x: number, y: number) => {
+        if (dragAnimationFrameRef.current) {
+          cancelAnimationFrame(dragAnimationFrameRef.current);
+        }
+        dragAnimationFrameRef.current = requestAnimationFrame(() => updateGhostPosition(x, y));
+      };
+
+      if (dragGhostRef.current) {
+        dragGhostRef.current.textContent = `${displayIndex + 1}`;
+        updateGhostPosition(startX, startY);
+      }
+
+      const handleMove = (moveEvent: MouseEvent) => {
+        const dx = moveEvent.clientX - startX;
+        const dy = moveEvent.clientY - startY;
+        if (!dragMovedRef.current && Math.hypot(dx, dy) > 1) {
+          dragMovedRef.current = true;
+        }
+        scheduleGhostUpdate(moveEvent.clientX, moveEvent.clientY);
+      };
+
+      const handleUp = (upEvent: MouseEvent) => {
+        document.removeEventListener('mousemove', handleMove);
+        document.removeEventListener('mouseup', handleUp);
+        document.body.style.userSelect = originalUserSelect;
+        document.body.style.cursor = originalCursor;
+        if (dragAnimationFrameRef.current) {
+          cancelAnimationFrame(dragAnimationFrameRef.current);
+          dragAnimationFrameRef.current = null;
+        }
+        if (dragGhostRef.current) {
+          dragGhostRef.current.remove();
+          dragGhostRef.current = null;
+        }
+
+        const draggedId = draggingNoteIdRef.current;
+        draggingNoteIdRef.current = null;
+
+        if (!dragMovedRef.current || draggedId === null) {
+          dragMovedRef.current = false;
+          return;
+        }
+
+        const anchorElement = getAnchorElementFromPoint(upEvent.clientX, upEvent.clientY);
+        if (!anchorElement) {
+          dragMovedRef.current = false;
+          return;
+        }
+
+        const newAnchor = buildAnchorPayload(anchorElement);
+        setNotes((prev) => {
+          const next = prev.map((n) => (n.id === draggedId ? { ...n, anchor: newAnchor } : n));
+          hasInitializedNotesRef.current = true;
+          persistNotes(next);
+          return next;
+        });
+        dragMovedRef.current = false;
+        ignoreMarkerClickRef.current = true;
+        setTimeout(() => {
+          ignoreMarkerClickRef.current = false;
+        }, 0);
+      };
+
+      document.addEventListener('mousemove', handleMove);
+      document.addEventListener('mouseup', handleUp);
+    },
+    [buildAnchorPayload, getAnchorElementFromPoint, hideTooltip, persistNotes]
+  );
+
+  const notesByAnchor = useMemo(() => {
+    const grouped = new Map<number, { note: Note; index: number }[]>();
+
+    notes.forEach((note, index) => {
+      const anchorIndex = note.anchor?.elementIndex;
+      if (typeof anchorIndex !== 'number') return;
+
+      const bucket = grouped.get(anchorIndex) ?? [];
+      bucket.push({ note, index });
+      grouped.set(anchorIndex, bucket);
+    });
+
+    return grouped;
+  }, [notes]);
 
   if (isArticleLoading) {
     return (
@@ -391,13 +641,15 @@ export default function ReaderClient({ articleId }: { articleId: string }) {
                 </p>
               </button>
             )}
-            <div className="text-xs text-gray-500 h-4 mt-1">
-              {isTitleError ? (
-                <span className="text-red-400">{titleErrorMessage}</span>
-              ) : isTitleSaving ? (
-                <span className="text-yellow-400">Saving title...</span>
-              ) : null}
-            </div>
+            {(isTitleError || isTitleSaving) && (
+              <div className="text-xs text-gray-500 h-4 mt-1">
+                {isTitleError ? (
+                  <span className="text-red-400">{titleErrorMessage}</span>
+                ) : isTitleSaving ? (
+                  <span className="text-yellow-400">Saving title...</span>
+                ) : null}
+              </div>
+            )}
           </div>
 
           <div className="flex items-center gap-4 ml-auto">
@@ -433,33 +685,28 @@ export default function ReaderClient({ articleId }: { articleId: string }) {
               title={article.title}
               byline={article.byline}
               settings={settings}
+              contentRef={contentRef}
             />
 
-            {/* Note Markers */}
-            {notes.map((note, index) => (
-              <div
-                key={note.id}
-                className={`absolute w-8 h-8 bg-yellow-500 rounded-full shadow-md flex items-center justify-center text-yellow-900 font-bold text-xs border-2 border-gray-900 cursor-grab active:cursor-grabbing hover:scale-110 transition-transform z-20 transform -translate-x-1/2 ${
-                  contentWidth > 0 &&
-                  Math.abs((note.left ?? NOTE_MARKER_RADIUS) - contentWidth / 2) <=
-                    contentWidth * (BLURRED_ZONE_PERCENT / 2)
-                    ? 'blur-[1px]'
-                    : ''
-                }`}
-                style={{
-                  top: note.top,
-                  left: note.left ?? NOTE_MARKER_RADIUS,
-                }}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  if (dragMovedRef.current) return;
-                  scrollToNote(note.top);
-                }}
-                onMouseDown={startNoteDrag(note.id)}
-              >
-                {index + 1}
-              </div>
-            ))}
+            {Array.from(notesByAnchor.entries()).map(([anchorIndex, groupedNotes]) => {
+              const anchorElement = annotatableElements[anchorIndex];
+              if (!anchorElement) return null;
+
+              return (
+                <NoteMarkerGroupMemo
+                  key={`anchor-${anchorIndex}`}
+                  anchorElement={anchorElement}
+                  notes={groupedNotes}
+                  onScrollTo={scrollToNote}
+                  registerMarker={registerMarker}
+                  onStartDrag={startMarkerDrag}
+                  ignoreClicksRef={ignoreMarkerClickRef}
+                  onShowTooltip={showTooltip}
+                  onHideTooltip={hideTooltip}
+                  onMoveTooltip={moveTooltip}
+                />
+              );
+            })}
 
             {/* Annotation Overlay */}
             {isAnnotating && (
@@ -510,32 +757,143 @@ export default function ReaderClient({ articleId }: { articleId: string }) {
           ))}
         </div>
       </div>
+      {typeof document !== 'undefined' && activeTooltip
+        ? createPortal(
+            <div
+              className="annotation-tooltip-floating"
+              style={{ left: activeTooltip.x, top: activeTooltip.y }}
+            >
+              {activeTooltip.text}
+            </div>,
+            document.body
+          )
+        : null}
     </div>
   );
 }
 
+function NoteMarkerGroup({
+  anchorElement,
+  notes,
+  onScrollTo,
+  registerMarker,
+  onStartDrag,
+  ignoreClicksRef,
+  onShowTooltip,
+  onHideTooltip,
+  onMoveTooltip,
+}: {
+  anchorElement: HTMLElement;
+  notes: { note: Note; index: number }[];
+  onScrollTo: (note: Note) => void;
+  registerMarker: (noteId: number, el: HTMLElement | null) => void;
+  onStartDrag: (note: Note, displayIndex: number) => (event: React.MouseEvent) => void;
+  ignoreClicksRef: React.MutableRefObject<boolean>;
+  onShowTooltip: (text: string, e: React.MouseEvent) => void;
+  onHideTooltip: () => void;
+  onMoveTooltip: (e: MouseEvent) => void;
+}) {
+  const tagName = anchorElement.tagName.toLowerCase();
+  const isMedia = ['img', 'video', 'iframe'].includes(tagName);
+  const portalTarget = useMemo(() => {
+    if (typeof document === 'undefined') return null;
+    const mount = document.createElement('span');
+    mount.className = 'annotation-mount';
+    return mount;
+  }, []);
+
+  useEffect(() => {
+    if (!portalTarget) return;
+
+    const host = anchorElement.parentElement ?? anchorElement;
+    host.classList.add('annotation-host');
+
+    if (isMedia) {
+      const referenceNode = anchorElement;
+      const parentNode = referenceNode.parentElement ?? host;
+      parentNode.insertBefore(portalTarget, referenceNode);
+    } else {
+      anchorElement.classList.add('annotation-host');
+      anchorElement.appendChild(portalTarget);
+    }
+
+    return () => {
+      if (portalTarget.parentNode) {
+        portalTarget.parentNode.removeChild(portalTarget);
+      }
+    };
+  }, [anchorElement, isMedia, portalTarget]);
+
+  if (!portalTarget) return null;
+
+  return createPortal(
+    <div className={`annotation-marker-group ${isMedia ? 'annotation-marker-group-media' : ''}`}>
+      {notes.map(({ note, index }) => (
+        <button
+          key={note.id}
+          className="annotation-marker"
+          ref={(el) => registerMarker(note.id, el)}
+          onMouseDown={onStartDrag(note, index)}
+          onMouseEnter={(e) =>
+            onShowTooltip(note.text?.trim() || note.anchor?.textPreview || `Note ${index + 1}`, e)
+          }
+          onMouseMove={(e) => onMoveTooltip(e.nativeEvent)}
+          onMouseLeave={onHideTooltip}
+          onClick={(e) => {
+            e.stopPropagation();
+            if (ignoreClicksRef.current) return;
+            onScrollTo(note);
+          }}
+          title={`Note ${index + 1}`}
+        >
+          {index + 1}
+        </button>
+      ))}
+    </div>,
+    portalTarget
+  );
+}
+
+const NoteMarkerGroupMemo = memo(NoteMarkerGroup, (prev, next) => {
+  if (prev.anchorElement !== next.anchorElement) return false;
+  if (prev.notes.length !== next.notes.length) return false;
+  for (let i = 0; i < prev.notes.length; i++) {
+    const a = prev.notes[i].note;
+    const b = next.notes[i].note;
+    if (a.id !== b.id) return false;
+    if (a.text !== b.text) return false;
+    if (a.anchor?.elementIndex !== b.anchor?.elementIndex) return false;
+    if (a.anchor?.textPreview !== b.anchor?.textPreview) return false;
+  }
+  return true;
+});
+
 interface NoteCardProps {
   note: Note;
   index: number;
-  onScrollTo: (top: number) => void;
+  onScrollTo: (note: Note) => void;
   onDelete: (id: number) => void;
   onChange: (id: number, text: string) => void;
 }
 
 const NoteCard = memo(({ note, index, onScrollTo, onDelete, onChange }: NoteCardProps) => {
   const [isEditing, setIsEditing] = useState(false);
+  const anchorLabel =
+    note.anchor && typeof note.anchor.elementIndex === 'number'
+      ? `${note.anchor.tagName?.toLowerCase() || 'element'} #${note.anchor.elementIndex + 1}`
+      : 'Location unavailable';
 
   return (
     <div
       className="bg-gray-800 p-4 rounded-xl shadow-sm border border-gray-700 hover:border-gray-600 transition-colors group"
-      onClick={() => onScrollTo(note.top)}
+      onClick={() => onScrollTo(note)}
     >
       <div className="flex justify-between items-start mb-2">
         <span className="text-xs font-mono text-gray-400 bg-gray-900/50 px-2 py-1 rounded flex items-center gap-2">
           <span className="w-4 h-4 bg-yellow-500 rounded-full flex items-center justify-center text-[10px] text-yellow-900 font-bold">
             {index + 1}
           </span>
-          {Math.round(note.top)}px • X: {Math.round(note.left ?? NOTE_MARKER_RADIUS)}px
+          {anchorLabel}
         </span>
         <button
           onClick={(e) => {
@@ -547,6 +905,11 @@ const NoteCard = memo(({ note, index, onScrollTo, onDelete, onChange }: NoteCard
           Delete
         </button>
       </div>
+      {note.anchor?.textPreview && (
+        <p className="text-xs text-gray-500 mb-3 italic overflow-hidden text-ellipsis whitespace-nowrap">
+          “{note.anchor.textPreview}”
+        </p>
+      )}
       {isEditing ? (
         <textarea
           value={note.text}

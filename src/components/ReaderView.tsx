@@ -1,4 +1,4 @@
-import { memo } from 'react';
+import { memo, RefObject } from 'react';
 import { ReaderSettings, Theme, FontFamily, FontSize } from '../types';
 
 // --- Helper: Style Generators ---
@@ -48,11 +48,13 @@ const ReaderViewComponent = ({
   title,
   byline,
   settings,
+  contentRef,
 }: {
   content: string;
   title: string;
   byline?: string | null;
   settings: ReaderSettings;
+  contentRef?: RefObject<HTMLDivElement | null>;
 }) => {
   // Content is sanitized on ingestion; render as-is to keep server/client HTML in sync.
   const sanitizedContent = content;
@@ -78,6 +80,7 @@ const ReaderViewComponent = ({
         <div
           suppressHydrationWarning
           className={`prose max-w-none transition-all duration-300 ${sizeClasses} ${themeClasses}`}
+          ref={contentRef}
           dangerouslySetInnerHTML={{ __html: sanitizedContent }}
         />
       </div>

@@ -1,17 +1,54 @@
 import { Timestamp } from 'firebase-admin/firestore';
-import DOMPurify from 'dompurify';
-import { JSDOM } from 'jsdom';
+import sanitizeHtml from 'sanitize-html';
+import type { IOptions } from 'sanitize-html';
 import { db } from './firebase-admin';
 import { Article, ArticleSummary, Note } from '../types';
 
-const jsdomWindow = new JSDOM('').window as unknown as Window & typeof globalThis;
-const purifier = DOMPurify(jsdomWindow);
+const baseAllowedAttributes = sanitizeHtml.defaults.allowedAttributes ?? {};
+const plainTextSanitizeOptions: IOptions = {
+  allowedTags: [],
+  allowedAttributes: {},
+  allowedSchemes: [],
+  allowedSchemesByTag: {},
+  disallowedTagsMode: 'discard',
+  enforceHtmlBoundary: false,
+};
+
+const htmlSanitizeOptions: IOptions = {
+  allowedTags: [
+    ...sanitizeHtml.defaults.allowedTags,
+    'img',
+    'picture',
+    'source',
+    'video',
+    'iframe',
+  ],
+  allowedAttributes: {
+    ...baseAllowedAttributes,
+    '*': ['class', 'id', 'lang', 'dir'],
+    a: [...(baseAllowedAttributes.a ?? []), 'rel'],
+    img: [...(baseAllowedAttributes.img ?? []), 'sizes'],
+    iframe: ['src', 'title', 'width', 'height', 'allow', 'allowfullscreen', 'loading'],
+  },
+  allowedSchemes: sanitizeHtml.defaults.allowedSchemes,
+  allowedSchemesByTag: {
+    ...(sanitizeHtml.defaults.allowedSchemesByTag ?? {}),
+    img: ['http', 'https', 'data'],
+    iframe: ['http', 'https'],
+  },
+  allowedIframeHostnames: ['www.youtube.com', 'player.vimeo.com'],
+};
 
 type NoteInput = {
   id: string | number;
   text?: unknown;
-  top?: unknown;
-  left?: unknown;
+  anchor?: unknown;
+};
+
+type NoteAnchorInput = {
+  elementIndex?: unknown;
+  tagName?: unknown;
+  textPreview?: unknown;
 };
 
 const isNoteInput = (value: unknown): value is NoteInput => {
@@ -20,9 +57,28 @@ const isNoteInput = (value: unknown): value is NoteInput => {
   return typeof id === 'string' || typeof id === 'number';
 };
 
-export const sanitizePlainText = (value: unknown) => purifier.sanitize(String(value ?? '')).trim();
+const isNoteAnchorInput = (value: unknown): value is NoteAnchorInput =>
+  typeof value === 'object' && value !== null;
 
-const sanitizeHTML = (value: unknown) => purifier.sanitize(String(value ?? ''));
+const normalizeAnchor = (anchor: NoteAnchorInput) => {
+  const index = Number(anchor.elementIndex);
+  if (!Number.isFinite(index)) return null;
+
+  return {
+    elementIndex: Math.max(0, Math.round(index)),
+    tagName: anchor.tagName
+      ? sanitizePlainText(anchor.tagName).toLowerCase().slice(0, 40)
+      : undefined,
+    textPreview: anchor.textPreview
+      ? sanitizePlainText(anchor.textPreview).slice(0, 240)
+      : undefined,
+  };
+};
+
+export const sanitizePlainText = (value: unknown) =>
+  sanitizeHtml(String(value ?? ''), plainTextSanitizeOptions).trim();
+
+const sanitizeHTML = (value: unknown) => sanitizeHtml(String(value ?? ''), htmlSanitizeOptions);
 
 export const sanitizeTitle = (value: unknown, fallback = '') =>
   sanitizePlainText(value ?? fallback).slice(0, 500);
@@ -79,11 +135,13 @@ export function normalizeNotes(payload: unknown): Note[] {
       const normalizedNote: Note = {
         id: Number(note.id) || Date.now(),
         text: sanitizePlainText(note.text),
-        top: Number(note.top) || 0,
       };
 
-      if (typeof note.left === 'number') {
-        normalizedNote.left = note.left;
+      if (isNoteAnchorInput(note.anchor)) {
+        const normalizedAnchor = normalizeAnchor(note.anchor);
+        if (normalizedAnchor) {
+          normalizedNote.anchor = normalizedAnchor;
+        }
       }
 
       return normalizedNote;

@@ -1,13 +1,13 @@
-"use client";
+'use client';
 
-import { useState, useEffect } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useRouter } from "next/navigation";
-import { formatDate } from "../lib/utils";
-import { ArticleSummary } from "../types";
+import { useState, useEffect } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useRouter } from 'next/navigation';
+import { formatDate } from '../lib/utils';
+import { ArticleSummary } from '../types';
 
 export default function HomeClient() {
-  const [url, setUrl] = useState("");
+  const [url, setUrl] = useState('');
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [activeToolbarId, setActiveToolbarId] = useState<string | null>(null);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
@@ -40,7 +40,7 @@ export default function HomeClient() {
       const response = await fetch(`/api/snapshot?url=${encodeURIComponent(properUrl)}`);
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || "Failed to fetch article content");
+        throw new Error(errorData.error || 'Failed to fetch article content');
       }
 
       const data = await response.json();
@@ -59,7 +59,7 @@ export default function HomeClient() {
       });
 
       if (!saveResponse.ok) {
-        throw new Error("Failed to save article");
+        throw new Error('Failed to save article');
       }
 
       const savedData = await saveResponse.json();
@@ -76,7 +76,7 @@ export default function HomeClient() {
         method: 'DELETE',
       });
       if (!response.ok) {
-        throw new Error("Failed to delete article");
+        throw new Error('Failed to delete article');
       }
     },
     onSuccess: () => {
@@ -93,11 +93,12 @@ export default function HomeClient() {
 
     try {
       const newArticleId = await importMutation.mutateAsync(url);
-      setUrl("");
+      setUrl('');
       router.push(`/reader/${newArticleId}`);
-    } catch (error: any) {
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to import article';
       console.error(error);
-      alert(error.message || "Failed to import article");
+      alert(message);
     }
   };
 
@@ -109,9 +110,10 @@ export default function HomeClient() {
     setActiveToolbarId(null);
     try {
       await deleteMutation.mutateAsync(articleId);
-    } catch (error: any) {
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to delete article';
       console.error(error);
-      alert(error.message || "Failed to delete article");
+      alert(message);
     }
   };
 
@@ -213,11 +215,13 @@ export default function HomeClient() {
                         <div className="relative">
                           <button
                             type="button"
-                            className="p-2 rounded-full bg-gray-700/40 text-gray-300 hover:text-white hover:bg-gray-600 transition-all shadow-sm opacity-0 group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:ring-offset-gray-900"
+                            className="p-2 rounded-full"
                             aria-label="Open article actions"
                             onClick={(e) => {
                               e.stopPropagation();
-                              setActiveToolbarId((prev) => (prev === article.id ? null : article.id));
+                              setActiveToolbarId((prev) =>
+                                prev === article.id ? null : article.id
+                              );
                             }}
                           >
                             ⋮
@@ -244,7 +248,10 @@ export default function HomeClient() {
                         </div>
                       </div>
                       {article.byline && (
-                        <p className="text-sm text-gray-500 italic line-clamp-1" title={article.byline}>
+                        <p
+                          className="text-sm text-gray-500 italic line-clamp-1"
+                          title={article.byline}
+                        >
                           By {article.byline}
                         </p>
                       )}
@@ -266,7 +273,10 @@ export default function HomeClient() {
 
       {articlePendingDelete && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={closeDeleteModal} />
+          <div
+            className="absolute inset-0 bg-black/70 backdrop-blur-sm"
+            onClick={closeDeleteModal}
+          />
           <div className="relative bg-gray-900 border border-gray-700 rounded-2xl shadow-2xl w-full max-w-md mx-4 p-6 space-y-4">
             <div>
               <h3 className="text-xl font-semibold text-white">Delete article?</h3>
@@ -275,7 +285,8 @@ export default function HomeClient() {
               </p>
             </div>
             <p className="text-sm text-gray-500">
-              This removes the article and all of its notes permanently. This action cannot be undone.
+              This removes the article and all of its notes permanently. This action cannot be
+              undone.
             </p>
             <div className="flex justify-end gap-3">
               <button

@@ -1,8 +1,13 @@
+export interface NoteAnchor {
+  elementIndex: number;
+  tagName?: string;
+  textPreview?: string;
+}
+
 export interface Note {
   id: number;
   text: string;
-  top: number;
-  left?: number;
+  anchor?: NoteAnchor;
 }
 
 export interface Article {
