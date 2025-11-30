@@ -12,6 +12,9 @@
     "type-check": "tsc --noEmit",
     "prepare": "husky"
   },
+  "engines": {
+    "node": "24.x"
+  },
   "lint-staged": {
     "*.{js,jsx,ts,tsx}": [
       "eslint --fix",
