@@ -38,12 +38,14 @@ From **Firebase Console → Project Settings → General → Your apps**, add to
 
 ## Feature Priority (ROI ÷ Effort)
 
-| Rank | Feature                                            | Why this order                                                                                            |
-| ---- | -------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
-| 2    | Auth                                               | Unlocks saved work per user and is a prerequisite for collaboration; Firebase Auth keeps effort moderate. |
-| 3    | AI integration to add comments/ask questions       | High differentiation with moderate effort once content is in Firestore; can be scoped to Q&A first.       |
-| 4    | Add PDFs/images and render as HTML                 | Expands core utility; moderate effort for parsing/upload but high value for research workflows.           |
-| 5    | Add YT video with timestamped comments             | Useful but narrower audience; medium effort (player + time-based annotations).                            |
-| 6    | Collaboration project-wise                         | Strong ROI but high complexity (permissions, concurrency), best after auth and grouping are solid.        |
-| 7    | Canvas relations linking documents across projects | Visually compelling but highest complexity; build once data model and collaboration are stable.           |
-| 8    | Add option to export as markdown/pdf               | Easy to implement and adds value for users.                                                               |
+| Rank | Feature                                                        | Why this order                                                                                            |
+| ---- | -------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| 2    | Auth (after supabase)                                          | Unlocks saved work per user and is a prerequisite for collaboration; Firebase Auth keeps effort moderate. |
+| 3    | AI integration to add comments/ask questions                   | High differentiation with moderate effort once content is in Firestore; can be scoped to Q&A first.       |
+| 4    | Add PDFs/images and render as HTML                             | Expands core utility; moderate effort for parsing/upload but high value for research workflows.           |
+| 5    | Add YT video with timestamped comments                         | Useful but narrower audience; medium effort (player + time-based annotations).                            |
+| 6    | Collaboration project-wise                                     | Strong ROI but high complexity (permissions, concurrency), best after auth and grouping are solid.        |
+| 7    | Canvas relations linking documents across projects             | Visually compelling but highest complexity; build once data model and collaboration are stable.           |
+| 8    | Add option to export as markdown/pdf                           | Easy to implement and adds value for users.                                                               |
+| 9    | Vercel deployment with playwright                              |
+| 10   | Add a browser extension to add pages directly from the browser |
