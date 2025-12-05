@@ -1,9 +1,23 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { chromium } from 'playwright';
-import { createRequire } from 'node:module';
+import { join } from 'node:path';
+import { existsSync } from 'node:fs';
 
-const require = createRequire(import.meta.url);
-const readabilityScriptPath = require.resolve('@mozilla/readability/Readability.js');
+const readabilityScriptPath = (() => {
+  const scriptPath = join(
+    process.cwd(),
+    'node_modules',
+    '@mozilla',
+    'readability',
+    'Readability.js'
+  );
+
+  if (!existsSync(scriptPath)) {
+    throw new Error(`Readability script not found at ${scriptPath}`);
+  }
+
+  return scriptPath;
+})();
 
 type ReadabilityArticle = {
   title: string;
