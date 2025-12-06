@@ -176,3 +176,46 @@ body {
 .annotation-marker:active {
   transform: scale(0.95);
 }
+
+/* Document Content Styles */
+.document-content {
+  @apply max-w-none;
+}
+
+.document-content .image-container {
+  @apply my-6;
+}
+
+.document-content .image-container img {
+  @apply rounded-lg shadow-lg border border-gray-200 dark:border-gray-700;
+}
+
+.document-content .image-info,
+.document-content .pdf-info {
+  @apply bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4 text-sm;
+}
+
+.document-content .image-info p,
+.document-content .pdf-info p {
+  @apply mb-1;
+}
+
+.document-content .pdf-text {
+  @apply my-6;
+}
+
+.document-content .pdf-text h2 {
+  @apply text-xl font-semibold mb-4 text-gray-900 dark:text-gray-100;
+}
+
+.document-content .pdf-text div {
+  @apply bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg p-6 text-gray-800 dark:text-gray-200;
+}
+
+.document-content .pdf-info h2 {
+  @apply text-lg font-semibold mb-3 text-gray-900 dark:text-gray-100;
+}
+
+.document-content p:last-child {
+  @apply mb-0;
+}

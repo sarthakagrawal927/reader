@@ -35,6 +35,7 @@ export default function HomeClient() {
   const [selectedProjectId, setSelectedProjectId] = useState<string>('all');
   const [newProjectName, setNewProjectName] = useState('');
   const [isProjectModalOpen, setIsProjectModalOpen] = useState(false);
+  const [uploadMode, setUploadMode] = useState<'url' | 'file'>('url');
 
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -110,6 +111,49 @@ export default function HomeClient() {
     },
   });
 
+  const uploadMutation = useMutation({
+    mutationFn: async (file: File) => {
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const response = await fetch('/api/upload', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Failed to process uploaded file');
+      }
+
+      const data = await response.json();
+      const article = data.snapshot;
+      const snapshotTitle = (article.title || '').trim() || file.name;
+
+      const saveResponse = await fetch('/api/articles', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          url: article.url,
+          title: snapshotTitle,
+          byline: article.byline,
+          content: article.content,
+          projectId: selectedProjectId === 'all' ? undefined : selectedProjectId,
+        }),
+      });
+
+      if (!saveResponse.ok) {
+        throw new Error('Failed to save article');
+      }
+
+      const savedData = await saveResponse.json();
+      return savedData.id as string;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['articles'] });
+    },
+  });
+
   const deleteMutation = useMutation({
     mutationFn: async (articleId: string) => {
       const response = await fetch(`/api/articles/${articleId}`, {
@@ -142,7 +186,23 @@ export default function HomeClient() {
     }
   };
 
-  const isImporting = importMutation.isPending;
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || uploadMutation.isPending) return;
+
+    try {
+      const newArticleId = await uploadMutation.mutateAsync(file);
+      // Reset the file input
+      e.target.value = '';
+      router.push(`/reader/${newArticleId}`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to upload file';
+      console.error(error);
+      alert(message);
+    }
+  };
+
+  const isImporting = importMutation.isPending || uploadMutation.isPending;
 
   const toggleStatus = useMutation({
     mutationFn: async ({ id, status }: { id: string; status: ArticleStatus }) => {
@@ -359,49 +419,112 @@ export default function HomeClient() {
 
         <div className="bg-gray-900/80 p-6 rounded-2xl shadow-2xl border border-gray-800 mb-8 backdrop-blur">
           <h2 className="text-lg font-semibold text-white mb-4">Add New Article</h2>
-          <form onSubmit={handleImport} className="flex flex-col gap-4 md:flex-row">
-            <Input
-              type="text"
-              value={url}
-              onChange={(e) => setUrl(e.target.value)}
-              placeholder="Enter website URL (e.g. https://example.com/article)"
-              className="flex-grow"
-              disabled={isImporting}
-            />
-            <Select
-              value={selectedProjectId === 'all' ? 'default' : selectedProjectId}
-              onValueChange={(val) => setSelectedProjectId(val)}
-            >
-              <SelectTrigger className="md:w-52">
-                <SelectValue placeholder="Default" />
-              </SelectTrigger>
-              <SelectContent>
-                {projectOptions
-                  .filter((project) => project.id !== 'all')
-                  .map((project) => (
-                    <SelectItem key={project.id} value={project.id}>
-                      {project.name}
-                    </SelectItem>
-                  ))}
-              </SelectContent>
-            </Select>
+          
+          {/* Upload Mode Toggle */}
+          <div className="flex gap-2 mb-4">
             <Button
-              type="submit"
-              className="px-6 py-3 font-medium flex items-center gap-2 whitespace-nowrap"
-              disabled={isImporting}
+              type="button"
+              variant={uploadMode === 'url' ? 'default' : 'secondary'}
+              size="sm"
+              onClick={() => setUploadMode('url')}
+              className="flex items-center gap-2"
             >
-              {isImporting ? (
-                <>
-                  <div className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full"></div>
-                  Importing...
-                </>
-              ) : (
-                <>
-                  <span>+</span> Import
-                </>
-              )}
+              <span>🔗</span> URL
             </Button>
-          </form>
+            <Button
+              type="button"
+              variant={uploadMode === 'file' ? 'default' : 'secondary'}
+              size="sm"
+              onClick={() => setUploadMode('file')}
+              className="flex items-center gap-2"
+            >
+              <span>📄</span> File (PDF/Image)
+            </Button>
+          </div>
+
+          {uploadMode === 'url' ? (
+            <form onSubmit={handleImport} className="flex flex-col gap-4 md:flex-row">
+              <Input
+                type="text"
+                value={url}
+                onChange={(e) => setUrl(e.target.value)}
+                placeholder="Enter website URL (e.g. https://example.com/article)"
+                className="flex-grow"
+                disabled={isImporting}
+              />
+              <Select
+                value={selectedProjectId === 'all' ? 'default' : selectedProjectId}
+                onValueChange={(val) => setSelectedProjectId(val)}
+              >
+                <SelectTrigger className="md:w-52">
+                  <SelectValue placeholder="Default" />
+                </SelectTrigger>
+                <SelectContent>
+                  {projectOptions
+                    .filter((project) => project.id !== 'all')
+                    .map((project) => (
+                      <SelectItem key={project.id} value={project.id}>
+                        {project.name}
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+              <Button
+                type="submit"
+                className="px-6 py-3 font-medium flex items-center gap-2 whitespace-nowrap"
+                disabled={isImporting}
+              >
+                {isImporting ? (
+                  <>
+                    <div className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full"></div>
+                    Importing...
+                  </>
+                ) : (
+                  <>
+                    <span>+</span> Import
+                  </>
+                )}
+              </Button>
+            </form>
+          ) : (
+            <div className="flex flex-col gap-4 md:flex-row">
+              <div className="flex-grow">
+                <Input
+                  type="file"
+                  onChange={handleFileUpload}
+                  accept=".pdf,.jpg,.jpeg,.png,.gif,.bmp,.webp,.svg"
+                  disabled={isImporting}
+                  className="cursor-pointer"
+                />
+                <p className="text-xs text-gray-400 mt-2">
+                  Supported formats: PDF, JPG, PNG, GIF, BMP, WebP, SVG (Max 10MB)
+                </p>
+              </div>
+              <Select
+                value={selectedProjectId === 'all' ? 'default' : selectedProjectId}
+                onValueChange={(val) => setSelectedProjectId(val)}
+              >
+                <SelectTrigger className="md:w-52">
+                  <SelectValue placeholder="Default" />
+                </SelectTrigger>
+                <SelectContent>
+                  {projectOptions
+                    .filter((project) => project.id !== 'all')
+                    .map((project) => (
+                      <SelectItem key={project.id} value={project.id}>
+                        {project.name}
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+              {isImporting && (
+                <div className="px-6 py-3 font-medium flex items-center gap-2 whitespace-nowrap">
+                  <div className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full"></div>
+                  Uploading...
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {articlesError && (
@@ -419,7 +542,7 @@ export default function HomeClient() {
             {articles.length === 0 ? (
               <div className="col-span-full text-center py-16 bg-gray-800 rounded-2xl border border-gray-700 border-dashed">
                 <p className="text-gray-300 text-lg mb-4">Your library is empty.</p>
-                <p className="text-gray-500">Enter a URL above to get started.</p>
+                <p className="text-gray-500">Enter a URL or upload a PDF/image file above to get started.</p>
               </div>
             ) : (
               filteredArticles.map((article) => {
