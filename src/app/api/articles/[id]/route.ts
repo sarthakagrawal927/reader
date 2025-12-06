@@ -1,16 +1,22 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { Timestamp } from 'firebase-admin/firestore';
 import { db } from '../../../../lib/firebase-admin';
 import { fetchArticleById, normalizeNotes, sanitizeTitle } from '../../../../lib/articles-service';
 import { ArticleStatus } from '../../../../types';
+import { verifyAuthToken, createAuthRequiredResponse } from '../../../../lib/auth-utils';
 
 const normalizeStatus = (status: unknown): ArticleStatus | null =>
   status === 'read' || status === 'in_progress' ? status : null;
 
-export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const userId = await verifyAuthToken(request);
+    if (!userId) {
+      return createAuthRequiredResponse();
+    }
+
     const { id } = await params;
-    const article = await fetchArticleById(id);
+    const article = await fetchArticleById(id, userId);
     if (!article) {
       return NextResponse.json({ error: 'Article not found' }, { status: 404 });
     }
@@ -22,9 +28,21 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   }
 }
 
-export async function PUT(request: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function PUT(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const userId = await verifyAuthToken(request);
+    if (!userId) {
+      return createAuthRequiredResponse();
+    }
+
     const { id } = await params;
+    
+    // First check if the article exists and belongs to the user
+    const article = await fetchArticleById(id, userId);
+    if (!article) {
+      return NextResponse.json({ error: 'Article not found' }, { status: 404 });
+    }
+
     const body = await request.json();
     const { notes, title, status, projectId } = body || {};
 
@@ -64,9 +82,21 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
   }
 }
 
-export async function DELETE(request: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function DELETE(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const userId = await verifyAuthToken(request);
+    if (!userId) {
+      return createAuthRequiredResponse();
+    }
+
     const { id } = await params;
+    
+    // First check if the article exists and belongs to the user
+    const article = await fetchArticleById(id, userId);
+    if (!article) {
+      return NextResponse.json({ error: 'Article not found' }, { status: 404 });
+    }
+
     const docRef = db.collection('annotations').doc(id);
     await docRef.delete();
     return NextResponse.json({ success: true });

@@ -1,5 +1,6 @@
 import { dehydrate } from '@tanstack/react-query';
 import HomeClient from '../components/HomeClient';
+import AuthModal from '../components/AuthModal';
 import { fetchArticleSummaries, fetchProjects } from '../lib/articles-service';
 import { ReactQueryHydrate } from '../components/ReactQueryHydrate';
 import { getQueryClient } from '../lib/get-query-client';
@@ -21,6 +22,7 @@ export default async function Page() {
   return (
     <ReactQueryHydrate state={dehydrate(queryClient)}>
       <HomeClient />
+      <AuthModal />
     </ReactQueryHydrate>
   );
 }

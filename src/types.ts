@@ -22,6 +22,7 @@ export interface Article {
   status?: ArticleStatus;
   createdAt?: string;
   updatedAt?: string;
+  userId?: string;
 }
 
 export type ArticleSummary = Omit<Article, 'content' | 'notes'> & {
@@ -44,4 +45,12 @@ export interface Project {
   name: string;
   createdAt?: string;
   updatedAt?: string;
+  userId?: string;
+}
+
+export interface User {
+  uid: string;
+  email: string;
+  displayName?: string;
+  photoURL?: string;
 }

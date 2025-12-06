@@ -7,6 +7,19 @@ import { useRouter } from 'next/navigation';
 import { Article, Note, ReaderSettings } from '../types';
 import { ReaderView, getThemeClasses } from './ReaderView';
 import { AppearanceToolbar } from './AppearanceToolbar';
+import { useAuth } from './AuthContext';
+import { auth } from '../lib/firebase';
+
+async function getAuthHeaders() {
+  const user = auth.currentUser;
+  if (!user) return {};
+  
+  const token = await user.getIdToken();
+  return {
+    'Authorization': `Bearer ${token}`,
+    'Content-Type': 'application/json',
+  };
+}
 
 const ANNOTATABLE_SELECTOR = [
   'p',
@@ -36,9 +49,17 @@ const ANNOTATABLE_SELECTOR = [
 const SCROLL_OFFSET = 80;
 
 export default function ReaderClient({ articleId }: { articleId: string }) {
+  const { user } = useAuth();
   const id = articleId;
   const router = useRouter();
   const queryClient = useQueryClient();
+
+  // Redirect to home if not authenticated
+  useEffect(() => {
+    if (!user) {
+      router.push('/');
+    }
+  }, [user, router]);
 
   const [notes, setNotes] = useState<Note[]>([]);
   const [isAnnotating, setIsAnnotating] = useState(false);
@@ -82,7 +103,8 @@ export default function ReaderClient({ articleId }: { articleId: string }) {
   } = useQuery<Article>({
     queryKey: ['article', id],
     queryFn: async () => {
-      const response = await fetch(`/api/articles/${id}`);
+      const headers = await getAuthHeaders();
+      const response = await fetch(`/api/articles/${id}`, { headers });
       if (!response.ok) {
         if (response.status === 404) {
           throw new Error('NOT_FOUND');
@@ -98,7 +120,7 @@ export default function ReaderClient({ articleId }: { articleId: string }) {
     mutationFn: async (updatedNotes: Note[]) => {
       const response = await fetch(`/api/articles/${id}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await getAuthHeaders(),
         body: JSON.stringify({ notes: updatedNotes }),
       });
       if (!response.ok) {
@@ -124,7 +146,7 @@ export default function ReaderClient({ articleId }: { articleId: string }) {
     mutationFn: async (newTitle: string) => {
       const response = await fetch(`/api/articles/${id}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await getAuthHeaders(),
         body: JSON.stringify({ title: newTitle }),
       });
       if (!response.ok) {

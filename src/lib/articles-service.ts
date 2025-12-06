@@ -90,11 +90,19 @@ const normalizeStatus = (status: unknown): ArticleStatus => {
   return status === 'read' ? 'read' : 'in_progress';
 };
 
-export async function fetchArticleSummaries(projectId?: string): Promise<ArticleSummary[]> {
+export async function fetchArticleSummaries(projectId?: string, userId?: string): Promise<ArticleSummary[]> {
   let collection = db.collection('annotations').orderBy('createdAt', 'desc');
-  if (projectId && projectId !== 'all') {
-    collection = db.collection('annotations').where('projectId', '==', projectId);
+  
+  // Always filter by userId if provided
+  if (userId) {
+    collection = db.collection('annotations').where('userId', '==', userId);
   }
+  
+  // Add projectId filter if specified and not 'all'
+  if (projectId && projectId !== 'all') {
+    collection = collection.where('projectId', '==', projectId);
+  }
+  
   const snapshot = await collection.get();
 
   return snapshot.docs.map((doc) => {
@@ -119,10 +127,16 @@ export async function fetchArticleSummaries(projectId?: string): Promise<Article
   });
 }
 
-export async function fetchArticleById(id: string): Promise<Article | null> {
+export async function fetchArticleById(id: string, userId?: string): Promise<Article | null> {
   const doc = await db.collection('annotations').doc(id).get();
   if (!doc.exists) return null;
   const data = doc.data()!;
+  
+  // Check if the article belongs to the user
+  if (userId && data.userId !== userId) {
+    return null;
+  }
+  
   const status = normalizeStatus(data.status);
   return {
     id: doc.id,
@@ -193,9 +207,15 @@ export async function createArticleRecord(payload: {
   byline?: string;
   content: string;
   projectId?: string;
+  userId?: string;
 }) {
   const sanitized = sanitizeArticlePayload(payload);
   const now = Timestamp.now();
+  
+  if (!sanitized.userId) {
+    throw new Error('User ID is required to create an article');
+  }
+  
   const docRef = await db.collection('annotations').add({
     ...sanitized,
     notes: [],
@@ -209,7 +229,7 @@ export async function createArticleRecord(payload: {
 
 const sanitizeProjectName = (value: unknown) => sanitizeTitle(value, DEFAULT_PROJECT_NAME);
 
-export async function ensureDefaultProject(): Promise<Project> {
+export async function ensureDefaultProject(userId?: string): Promise<Project> {
   const defaultRef = db.collection('projects').doc(DEFAULT_PROJECT_ID);
   const snapshot = await defaultRef.get();
   if (!snapshot.exists) {
@@ -218,6 +238,7 @@ export async function ensureDefaultProject(): Promise<Project> {
       name: DEFAULT_PROJECT_NAME,
       createdAt: now,
       updatedAt: now,
+      userId: userId || null,
     });
   }
   const fresh = await defaultRef.get();
@@ -227,12 +248,20 @@ export async function ensureDefaultProject(): Promise<Project> {
     name: data.name || DEFAULT_PROJECT_NAME,
     createdAt: data.createdAt?.toDate().toISOString(),
     updatedAt: data.updatedAt?.toDate().toISOString(),
+    userId: data.userId,
   };
 }
 
-export async function fetchProjects(): Promise<Project[]> {
-  const defaultProject = await ensureDefaultProject();
-  const snapshot = await db.collection('projects').orderBy('createdAt', 'desc').get();
+export async function fetchProjects(userId?: string): Promise<Project[]> {
+  const defaultProject = await ensureDefaultProject(userId);
+  let collection = db.collection('projects').orderBy('createdAt', 'desc');
+  
+  // Filter by userId if provided, but exclude default project from user filter since it's shared
+  if (userId) {
+    collection = db.collection('projects').where('userId', '==', userId);
+  }
+  
+  const snapshot = await collection.get();
   const projects: Project[] = snapshot.docs.map((doc) => {
     const data = doc.data();
     return {
@@ -240,6 +269,7 @@ export async function fetchProjects(): Promise<Project[]> {
       name: data.name || DEFAULT_PROJECT_NAME,
       createdAt: data.createdAt?.toDate().toISOString(),
       updatedAt: data.updatedAt?.toDate().toISOString(),
+      userId: data.userId,
     };
   });
 
@@ -252,23 +282,37 @@ export async function fetchProjects(): Promise<Project[]> {
   });
 }
 
-export async function createProject(name: string): Promise<string> {
+export async function createProject(name: string, userId?: string): Promise<string> {
   const sanitizedName = sanitizeProjectName(name);
   if (!sanitizedName) {
     throw new Error('Project name is required');
   }
+  
+  if (!userId) {
+    throw new Error('User ID is required to create a project');
+  }
+  
   const now = Timestamp.now();
   const ref = await db.collection('projects').add({
     name: sanitizedName,
+    userId,
     createdAt: now,
     updatedAt: now,
   });
   return ref.id;
 }
 
-export async function moveArticlesToDefault(projectId: string) {
+export async function moveArticlesToDefault(projectId: string, userId?: string) {
   if (projectId === DEFAULT_PROJECT_ID) return;
-  const snapshot = await db.collection('annotations').where('projectId', '==', projectId).get();
+  
+  let collection = db.collection('annotations').where('projectId', '==', projectId);
+  
+  // Filter by userId if provided to ensure we only move articles that belong to the user
+  if (userId) {
+    collection = db.collection('annotations').where('projectId', '==', projectId).where('userId', '==', userId);
+  }
+  
+  const snapshot = await collection.get();
   const batch = db.batch();
   snapshot.forEach((doc) => {
     batch.update(doc.ref, { projectId: DEFAULT_PROJECT_ID, updatedAt: Timestamp.now() });
@@ -278,10 +322,19 @@ export async function moveArticlesToDefault(projectId: string) {
   }
 }
 
-export async function deleteProject(projectId: string) {
+export async function deleteProject(projectId: string, userId?: string) {
   if (projectId === DEFAULT_PROJECT_ID) {
     throw new Error('Cannot delete default project');
   }
-  await moveArticlesToDefault(projectId);
+  
+  // Check if the project belongs to the user
+  if (userId) {
+    const projectDoc = await db.collection('projects').doc(projectId).get();
+    if (!projectDoc.exists || projectDoc.data()?.userId !== userId) {
+      throw new Error('Project not found or access denied');
+    }
+  }
+  
+  await moveArticlesToDefault(projectId, userId);
   await db.collection('projects').doc(projectId).delete();
 }

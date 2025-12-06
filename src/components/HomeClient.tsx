@@ -26,8 +26,23 @@ import {
 import { Label } from './ui/label';
 import { Badge } from './ui/badge';
 import { MoreVertical } from 'lucide-react';
+import { useAuth } from './AuthContext';
+import UserHeader from './UserHeader';
+import { auth } from '../lib/firebase';
+
+async function getAuthHeaders() {
+  const user = auth.currentUser;
+  if (!user) return {};
+  
+  const token = await user.getIdToken();
+  return {
+    'Authorization': `Bearer ${token}`,
+    'Content-Type': 'application/json',
+  };
+}
 
 export default function HomeClient() {
+  const { user, loading: authLoading } = useAuth();
   const [url, setUrl] = useState('');
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [activeToolbarId, setActiveToolbarId] = useState<string | null>(null);
@@ -46,7 +61,12 @@ export default function HomeClient() {
   } = useQuery<ArticleSummary[]>({
     queryKey: ['articles'],
     queryFn: async () => {
-      const response = await fetch('/api/articles', { cache: 'no-store' });
+      if (!user) return [];
+      const headers = await getAuthHeaders();
+      const response = await fetch('/api/articles', { 
+        cache: 'no-store',
+        headers 
+      });
       if (!response.ok) {
         throw new Error('Failed to fetch articles');
       }
@@ -61,7 +81,12 @@ export default function HomeClient() {
   } = useQuery<Project[]>({
     queryKey: ['projects'],
     queryFn: async () => {
-      const response = await fetch('/api/projects', { cache: 'no-store' });
+      if (!user) return [];
+      const headers = await getAuthHeaders();
+      const response = await fetch('/api/projects', { 
+        cache: 'no-store',
+        headers 
+      });
       if (!response.ok) {
         throw new Error('Failed to fetch projects');
       }
@@ -88,7 +113,7 @@ export default function HomeClient() {
 
       const saveResponse = await fetch('/api/articles', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await getAuthHeaders(),
         body: JSON.stringify({
           url: properUrl,
           title: snapshotTitle,
@@ -114,6 +139,7 @@ export default function HomeClient() {
     mutationFn: async (articleId: string) => {
       const response = await fetch(`/api/articles/${articleId}`, {
         method: 'DELETE',
+        headers: await getAuthHeaders(),
       });
       if (!response.ok) {
         throw new Error('Failed to delete article');
@@ -148,7 +174,7 @@ export default function HomeClient() {
     mutationFn: async ({ id, status }: { id: string; status: ArticleStatus }) => {
       const response = await fetch(`/api/articles/${id}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await getAuthHeaders(),
         body: JSON.stringify({ status }),
       });
       if (!response.ok) {
@@ -169,7 +195,7 @@ export default function HomeClient() {
     mutationFn: async (name: string) => {
       const response = await fetch('/api/projects', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await getAuthHeaders(),
         body: JSON.stringify({ name }),
       });
       if (!response.ok) {
@@ -187,6 +213,7 @@ export default function HomeClient() {
     mutationFn: async (projectId: string) => {
       const response = await fetch(`/api/projects/${projectId}`, {
         method: 'DELETE',
+        headers: await getAuthHeaders(),
       });
       if (!response.ok) {
         throw new Error('Failed to delete project');
@@ -203,7 +230,7 @@ export default function HomeClient() {
     mutationFn: async ({ id, projectId }: { id: string; projectId: string }) => {
       const response = await fetch(`/api/articles/${id}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await getAuthHeaders(),
         body: JSON.stringify({ projectId }),
       });
       if (!response.ok) {
@@ -270,6 +297,23 @@ export default function HomeClient() {
   const projectOptions = [{ id: 'all', name: 'All projects' }, ...(projects || [])];
   const moveTargets = (projects || []).filter((p) => p.id !== 'all');
 
+  // Show loading state while checking authentication
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-b from-black via-gray-950 to-gray-900 p-8 font-sans text-gray-100 flex items-center justify-center">
+        <div className="text-center">
+          <div className="h-8 w-8 border-2 border-white border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <p>Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Don't render the main content if not authenticated (AuthModal will handle this)
+  if (!user) {
+    return null;
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-black via-gray-950 to-gray-900 p-8 font-sans text-gray-100">
       <div className="max-w-6xl mx-auto space-y-6">
@@ -279,40 +323,41 @@ export default function HomeClient() {
             <p className="text-gray-400 mt-1">Manage your annotated articles</p>
           </div>
 
-          <div className="w-full md:w-auto bg-gray-900/70 border border-gray-800 rounded-xl p-4 shadow-lg backdrop-blur">
-            <div className="flex flex-wrap items-center gap-3">
-              <span className="text-xs uppercase tracking-wide text-gray-500">Project</span>
-              <Select
-                value={selectedProjectId}
-                onValueChange={(value) => setSelectedProjectId(value)}
-                disabled={isProjectsLoading}
-              >
-                <SelectTrigger className="w-48 md:w-56">
-                  <SelectValue placeholder="All projects" />
-                </SelectTrigger>
-                <SelectContent>
-                  {projectOptions.map((project) => (
-                    <SelectItem key={project.id} value={project.id}>
-                      {project.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {projectsError && (
-                <span className="text-xs text-red-400">Failed to load projects</span>
-              )}
-              <Dialog open={isProjectModalOpen} onOpenChange={setIsProjectModalOpen}>
-                <DialogTrigger asChild>
-                  <Button size="sm">+ New</Button>
-                </DialogTrigger>
-                <DialogContent>
-                  <DialogHeader>
-                    <DialogTitle>Create project</DialogTitle>
-                    <p className="text-sm text-gray-400">Organize your articles into a project.</p>
-                  </DialogHeader>
-                  <form
-                    className="space-y-4"
-                    onSubmit={(e) => {
+          <div className="flex items-center gap-4">
+            <div className="w-full md:w-auto bg-gray-900/70 border border-gray-800 rounded-xl p-4 shadow-lg backdrop-blur">
+              <div className="flex flex-wrap items-center gap-3">
+                <span className="text-xs uppercase tracking-wide text-gray-500">Project</span>
+                <Select
+                  value={selectedProjectId}
+                  onValueChange={(value) => setSelectedProjectId(value)}
+                  disabled={isProjectsLoading}
+                >
+                  <SelectTrigger className="w-48 md:w-56">
+                    <SelectValue placeholder="All projects" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {projectOptions.map((project) => (
+                      <SelectItem key={project.id} value={project.id}>
+                        {project.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {projectsError && (
+                  <span className="text-xs text-red-400">Failed to load projects</span>
+                )}
+                <Dialog open={isProjectModalOpen} onOpenChange={setIsProjectModalOpen}>
+                  <DialogTrigger asChild>
+                    <Button size="sm">+ New</Button>
+                  </DialogTrigger>
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle>Create project</DialogTitle>
+                      <p className="text-sm text-gray-400">Organize your articles into a project.</p>
+                    </DialogHeader>
+                    <form
+                      className="space-y-4"
+                      onSubmit={(e) => {
                       e.preventDefault();
                       if (!newProjectName.trim() || createProjectMutation.isPending) return;
                       createProjectMutation.mutate(newProjectName.trim());
@@ -355,6 +400,7 @@ export default function HomeClient() {
               )}
             </div>
           </div>
+          <UserHeader />
         </div>
 
         <div className="bg-gray-900/80 p-6 rounded-2xl shadow-2xl border border-gray-800 mb-8 backdrop-blur">
