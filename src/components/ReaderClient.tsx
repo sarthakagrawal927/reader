@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation';
 import { Article, Note, ReaderSettings } from '../types';
 import { ReaderView, getThemeClasses } from './ReaderView';
 import { AppearanceToolbar } from './AppearanceToolbar';
+import AIAssistant from './AIAssistant';
 
 const ANNOTATABLE_SELECTOR = [
   'p',
@@ -44,6 +45,7 @@ export default function ReaderClient({ articleId }: { articleId: string }) {
   const [isAnnotating, setIsAnnotating] = useState(false);
   const [titleDraft, setTitleDraft] = useState('');
   const [isTitleEditing, setIsTitleEditing] = useState(false);
+  const [selectedText, setSelectedText] = useState<string>('');
 
   // Layout State
   const [leftPanelWidth, setLeftPanelWidth] = useState(66.66);
@@ -222,6 +224,23 @@ export default function ReaderClient({ articleId }: { articleId: string }) {
     refreshAnnotationTargets();
   }, [notes, refreshAnnotationTargets]);
 
+  // Handle text selection for AI assistant
+  useEffect(() => {
+    const handleSelectionChange = () => {
+      const selection = window.getSelection();
+      if (selection && selection.toString().trim().length > 0) {
+        setSelectedText(selection.toString());
+      } else {
+        setSelectedText('');
+      }
+    };
+
+    document.addEventListener('selectionchange', handleSelectionChange);
+    return () => {
+      document.removeEventListener('selectionchange', handleSelectionChange);
+    };
+  }, []);
+
   // Resizing Logic
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
@@ -365,6 +384,27 @@ export default function ReaderClient({ articleId }: { articleId: string }) {
   const handleDeleteNote = useCallback((id: number) => {
     setNotes((prev) => prev.filter((n) => n.id !== id));
   }, []);
+
+  const handleAINote = useCallback(
+    (noteText: string) => {
+      const noteId = ++nextNoteIdRef.current;
+      const newNote: Note = {
+        id: noteId,
+        text: noteText,
+        anchor: selectedText
+          ? {
+              elementIndex: 0, // Will be positioned at the top by default
+              textPreview: selectedText.substring(0, 100),
+              tagName: 'p',
+            }
+          : undefined,
+      };
+
+      setNotes((prev) => [...prev, newNote]);
+      setSelectedText('');
+    },
+    [selectedText]
+  );
 
   const scrollToNote = useCallback(
     (note: Note) => {
@@ -736,6 +776,12 @@ export default function ReaderClient({ articleId }: { articleId: string }) {
         </div>
 
         <div className="flex-grow overflow-y-auto p-4 space-y-4">
+          <AIAssistant
+            articleContent={article?.content || ''}
+            selectedText={selectedText}
+            onAddNote={handleAINote}
+          />
+
           {notes.length === 0 && (
             <div className="text-center text-gray-500 mt-10">
               <p>No notes yet.</p>
