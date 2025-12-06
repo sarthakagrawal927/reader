@@ -10,7 +10,8 @@
     "format": "prettier --write .",
     "check-format": "prettier --check .",
     "type-check": "tsc --noEmit",
-    "prepare": "husky"
+    "prepare": "husky",
+    "install-browsers": "playwright install --with-deps chromium"
   },
   "engines": {
     "node": "24.x"

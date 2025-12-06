@@ -40,7 +40,7 @@ From **Firebase Console → Project Settings → General → Your apps**, add to
 
 | Rank | Feature                                                        | Why this order                                                                                            |
 | ---- | -------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
-| 1    | Ensure extraction works in hosted version                      |
+| 1    | ~~Ensure extraction works in hosted version~~                  | ✅ Implemented with Playwright + fallback method for serverless environments |
 | 2    | Auth (after supabase)                                          | Unlocks saved work per user and is a prerequisite for collaboration; Firebase Auth keeps effort moderate. |
 | 3    | AI integration to add comments/ask questions                   | High differentiation with moderate effort once content is in Firestore; can be scoped to Q&A first.       |
 | 4    | Add PDFs/images and render as HTML                             | Expands core utility; moderate effort for parsing/upload but high value for research workflows.           |
