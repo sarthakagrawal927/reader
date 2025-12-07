@@ -46,6 +46,8 @@ export default function ReaderClient({ articleId }: { articleId: string }) {
   const [titleDraft, setTitleDraft] = useState('');
   const [isTitleEditing, setIsTitleEditing] = useState(false);
   const [selectedText, setSelectedText] = useState<string>('');
+  const [showAIToolbar, setShowAIToolbar] = useState(false);
+  const [aiToolbarPosition, setAiToolbarPosition] = useState({ x: 0, y: 0 });
 
   // Layout State
   const [leftPanelWidth, setLeftPanelWidth] = useState(66.66);
