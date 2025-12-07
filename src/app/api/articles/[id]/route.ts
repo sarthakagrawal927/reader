@@ -9,6 +9,10 @@ const normalizeStatus = (status: unknown): ArticleStatus | null =>
 
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
+    if (!db) {
+      return new NextResponse('Database not available', { status: 500 });
+    }
+
     const { id } = await params;
     const article = await fetchArticleById(id);
     if (!article) {
@@ -24,6 +28,10 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
 
 export async function PUT(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
+    if (!db) {
+      return new NextResponse('Database not available', { status: 500 });
+    }
+
     const { id } = await params;
     const body = await request.json();
     const { notes, title, status, projectId } = body || {};
@@ -66,6 +74,10 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
 
 export async function DELETE(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
+    if (!db) {
+      return new NextResponse('Database not available', { status: 500 });
+    }
+
     const { id } = await params;
     const docRef = db.collection('annotations').doc(id);
     await docRef.delete();

@@ -91,6 +91,7 @@ const normalizeStatus = (status: unknown): ArticleStatus => {
 };
 
 export async function fetchArticleSummaries(projectId?: string): Promise<ArticleSummary[]> {
+  if (!db) return [];
   let collection = db.collection('annotations').orderBy('createdAt', 'desc');
   if (projectId && projectId !== 'all') {
     collection = db.collection('annotations').where('projectId', '==', projectId);
@@ -120,6 +121,7 @@ export async function fetchArticleSummaries(projectId?: string): Promise<Article
 }
 
 export async function fetchArticleById(id: string): Promise<Article | null> {
+  if (!db) return null;
   const doc = await db.collection('annotations').doc(id).get();
   if (!doc.exists) return null;
   const data = doc.data()!;
@@ -194,6 +196,7 @@ export async function createArticleRecord(payload: {
   content: string;
   projectId?: string;
 }) {
+  if (!db) throw new Error('Database not available');
   const sanitized = sanitizeArticlePayload(payload);
   const now = Timestamp.now();
   const docRef = await db.collection('annotations').add({
@@ -210,6 +213,7 @@ export async function createArticleRecord(payload: {
 const sanitizeProjectName = (value: unknown) => sanitizeTitle(value, DEFAULT_PROJECT_NAME);
 
 export async function ensureDefaultProject(): Promise<Project> {
+  if (!db) throw new Error('Database not available');
   const defaultRef = db.collection('projects').doc(DEFAULT_PROJECT_ID);
   const snapshot = await defaultRef.get();
   if (!snapshot.exists) {
@@ -232,6 +236,7 @@ export async function ensureDefaultProject(): Promise<Project> {
 
 export async function fetchProjects(): Promise<Project[]> {
   const defaultProject = await ensureDefaultProject();
+  if (!db) return [defaultProject];
   const snapshot = await db.collection('projects').orderBy('createdAt', 'desc').get();
   const projects: Project[] = snapshot.docs.map((doc) => {
     const data = doc.data();
@@ -253,6 +258,7 @@ export async function fetchProjects(): Promise<Project[]> {
 }
 
 export async function createProject(name: string): Promise<string> {
+  if (!db) throw new Error('Database not available');
   const sanitizedName = sanitizeProjectName(name);
   if (!sanitizedName) {
     throw new Error('Project name is required');
@@ -268,6 +274,7 @@ export async function createProject(name: string): Promise<string> {
 
 export async function moveArticlesToDefault(projectId: string) {
   if (projectId === DEFAULT_PROJECT_ID) return;
+  if (!db) return;
   const snapshot = await db.collection('annotations').where('projectId', '==', projectId).get();
   const batch = db.batch();
   snapshot.forEach((doc) => {
@@ -282,6 +289,7 @@ export async function deleteProject(projectId: string) {
   if (projectId === DEFAULT_PROJECT_ID) {
     throw new Error('Cannot delete default project');
   }
+  if (!db) throw new Error('Database not available');
   await moveArticlesToDefault(projectId);
   await db.collection('projects').doc(projectId).delete();
 }

@@ -45,14 +45,12 @@ const loadServiceAccount = (): admin.ServiceAccount => {
   }
 
   // Fallback to env string (base64 or raw JSON) for serverless (e.g., Vercel)
-  const envValue =
-    process.env.FIREBASE_SERVICE_ACCOUNT_KEY || process.env.FIREBASE_SERVICE_ACCOUNT;
+  const envValue = process.env.FIREBASE_SERVICE_ACCOUNT_KEY || process.env.FIREBASE_SERVICE_ACCOUNT;
 
   if (envValue) {
-    const decoded =
-      envValue.trim().startsWith('{')
-        ? envValue
-        : Buffer.from(envValue, 'base64').toString('utf-8');
+    const decoded = envValue.trim().startsWith('{')
+      ? envValue
+      : Buffer.from(envValue, 'base64').toString('utf-8');
     return normalizeServiceAccount(JSON.parse(decoded));
   }
 
@@ -61,10 +59,16 @@ const loadServiceAccount = (): admin.ServiceAccount => {
   );
 };
 
-// Prevent multiple initializations
-if (!admin.apps.length) {
-  const credential = admin.credential.cert(loadServiceAccount());
-  admin.initializeApp({ credential });
+// Initialize Firebase only if not in build phase and not already initialized
+if (!admin.apps.length && process.env.NEXT_PHASE !== 'phase-production-build') {
+  try {
+    const credential = admin.credential.cert(loadServiceAccount());
+    admin.initializeApp({ credential });
+  } catch (error) {
+    if (process.env.NODE_ENV === 'development') {
+      console.warn('Firebase initialization failed:', error);
+    }
+  }
 }
 
-export const db = getFirestore();
+export const db = admin.apps.length ? getFirestore() : null;

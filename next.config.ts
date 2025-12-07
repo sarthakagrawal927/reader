@@ -2,9 +2,8 @@ import type { NextConfig } from 'next';
 
 const nextConfig: NextConfig = {
   // Configure for serverless deployment with Playwright
-  experimental: {
-    serverComponentsExternalPackages: ['playwright'],
-  },
+  // Add turbopack config to avoid webpack conflicts
+  turbopack: {},
   // Ensure proper handling of Playwright in serverless environments
   webpack: (config) => {
     // Exclude Playwright from client bundle
