@@ -1,7 +1,10 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCompletion } from '@ai-sdk/react';
 import { Bot, Loader2, Send, Settings, Square, Trash2, X } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { Note, Article } from '../types';
 import {
   AIChatMessage,
@@ -99,23 +102,6 @@ const buildSystemPrompt = (article: NotesAIChatProps['article'], notes: Note[]) 
     .join('\n');
 };
 
-const parseTextStream = async (response: Response, onText: (text: string) => void) => {
-  const reader = response.body?.getReader();
-  if (!reader) return;
-
-  const decoder = new TextDecoder();
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    const chunk = decoder.decode(value, { stream: true });
-    if (chunk) onText(chunk);
-  }
-
-  const tail = decoder.decode();
-  if (tail) onText(tail);
-};
-
 export function NotesAIChat({
   article,
   notes,
@@ -124,7 +110,6 @@ export function NotesAIChat({
 }: NotesAIChatProps) {
   const [input, setInput] = useState('');
   const [showSettings, setShowSettings] = useState(false);
-  const [isStreaming, setIsStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [allowLocalProviders, setAllowLocalProviders] = useState(false);
   const [config, setConfig] = useState<AIConfig>(DEFAULT_AI_CONFIG);
@@ -136,9 +121,45 @@ export function NotesAIChat({
   const [modelError, setModelError] = useState<string | null>(null);
   const [isModelsLoading, setIsModelsLoading] = useState(false);
 
-  const abortRef = useRef<AbortController | null>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const hasHydratedMessagesRef = useRef(false);
+  const pendingHistoryRef = useRef<AIChatMessage[] | null>(null);
+
+  const {
+    completion,
+    complete,
+    stop,
+    setCompletion,
+    isLoading: isStreaming,
+  } = useCompletion({
+    api: '/api/ai/chat',
+    streamProtocol: 'text',
+    fetch: async (requestInfo, requestInit) => {
+      const response = await fetch(requestInfo, requestInit);
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => ({}))) as { error?: string };
+        throw new Error(payload.error || 'Unable to start AI response stream');
+      }
+      return response;
+    },
+    onError: (streamError) => {
+      setError(streamError instanceof Error ? streamError.message : 'AI request failed');
+      pendingHistoryRef.current = null;
+    },
+    onFinish: (_prompt, finalCompletion) => {
+      const pendingHistory = pendingHistoryRef.current;
+      if (!pendingHistory) return;
+
+      setMessages([
+        ...pendingHistory,
+        {
+          role: 'assistant',
+          content: finalCompletion,
+        },
+      ]);
+      pendingHistoryRef.current = null;
+    },
+  });
 
   useEffect(() => {
     const localProvidersAllowed = isLocalCLIEnabled();
@@ -185,6 +206,19 @@ export function NotesAIChat({
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isStreaming]);
+
+  useEffect(() => {
+    const pendingHistory = pendingHistoryRef.current;
+    if (!pendingHistory) return;
+
+    setMessages([
+      ...pendingHistory,
+      {
+        role: 'assistant',
+        content: completion,
+      },
+    ]);
+  }, [completion]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -301,55 +335,28 @@ export function NotesAIChat({
       }
 
       const nextHistory: AIChatMessage[] = [...messages, { role: 'user', content: userMessage }];
+      pendingHistoryRef.current = nextHistory;
       setMessages([...nextHistory, { role: 'assistant', content: '' }]);
-
-      const abortController = new AbortController();
-      abortRef.current = abortController;
-      setIsStreaming(true);
-
-      let streamed = '';
+      setCompletion('');
 
       try {
-        const response = await fetch('/api/ai/chat', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
+        await complete(userMessage, {
+          body: {
             provider: config.provider,
             model: config.model,
             apiKey: config.apiKey,
             messages: nextHistory,
             systemPrompt: buildSystemPrompt(article, notes),
-          }),
-          signal: abortController.signal,
-        });
-
-        if (!response.ok) {
-          const payload = (await response.json().catch(() => ({}))) as { error?: string };
-          throw new Error(payload.error || 'Unable to start AI response stream');
-        }
-
-        await parseTextStream(response, (chunk) => {
-          streamed += chunk;
-          setMessages([
-            ...nextHistory,
-            {
-              role: 'assistant',
-              content: streamed,
-            },
-          ]);
+          },
         });
       } catch (streamError) {
         if ((streamError as { name?: string })?.name !== 'AbortError') {
           setError(streamError instanceof Error ? streamError.message : 'AI request failed');
         }
-      } finally {
-        setIsStreaming(false);
-        abortRef.current = null;
+        pendingHistoryRef.current = null;
       }
     },
-    [article, config, input, isReady, isStreaming, messages, notes]
+    [article, complete, config, input, isReady, isStreaming, messages, notes, setCompletion]
   );
 
   useEffect(() => {
@@ -366,9 +373,8 @@ export function NotesAIChat({
   }, [queuedPrompt, onQueuedPromptHandled, sendMessage]);
 
   const stopStreaming = () => {
-    abortRef.current?.abort();
-    abortRef.current = null;
-    setIsStreaming(false);
+    stop();
+    pendingHistoryRef.current = null;
   };
 
   const clearChat = () => {
@@ -516,13 +522,19 @@ export function NotesAIChat({
                 className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
               >
                 <div
-                  className={`max-w-[88%] rounded-2xl px-3 py-2 text-sm whitespace-pre-wrap ${
+                  className={`max-w-[88%] rounded-2xl px-3 py-2 text-sm ${
                     message.role === 'user'
                       ? 'rounded-br-md bg-blue-600 text-white'
                       : 'rounded-bl-md border border-gray-700 bg-gray-800 text-gray-100'
                   }`}
                 >
-                  {message.content}
+                  {message.role === 'assistant' ? (
+                    <div className="prose prose-invert prose-sm max-w-none break-words">
+                      <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown>
+                    </div>
+                  ) : (
+                    <span className="whitespace-pre-wrap">{message.content}</span>
+                  )}
                   {isStreaming && index === messages.length - 1 && message.role === 'assistant' && (
                     <span className="ml-1 inline-block h-3 w-1 animate-pulse rounded-sm bg-blue-300" />
                   )}

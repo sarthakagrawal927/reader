@@ -11,7 +11,7 @@ import {
   normalizeAIProvider,
   prioritizeStableModelIds,
 } from '@/lib/ai-config';
-import { listLiveModels, normalizeApiKey, requiresApiKey } from '@/lib/ai-server';
+import { listLiveModels, normalizeApiKey } from '@/lib/ai-server';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -71,9 +71,12 @@ export async function POST(request: Request) {
       return NextResponse.json(fallbackModels(provider));
     }
 
-    if (requiresApiKey(provider) && !apiKey) {
+    if (provider !== 'gateway') {
       return NextResponse.json(
-        fallbackModels(provider, `API key is required for ${provider} model discovery.`)
+        fallbackModels(
+          provider,
+          'Live model discovery is currently available via Vercel AI Gateway only.'
+        )
       );
     }
 
