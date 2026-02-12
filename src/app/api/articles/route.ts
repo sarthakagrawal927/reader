@@ -1,10 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createArticleRecord, fetchArticleSummaries } from '../../../lib/articles-service';
+import { getAuthenticatedUserId } from '../../../lib/auth-api';
 
 export async function GET(request: NextRequest) {
   try {
+    const userId = await getAuthenticatedUserId();
+    if (!userId) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const projectId = request.nextUrl.searchParams.get('projectId') || undefined;
-    const articles = await fetchArticleSummaries(projectId || undefined);
+    const articles = await fetchArticleSummaries(userId, projectId || undefined);
     return NextResponse.json(articles);
   } catch (error) {
     console.error('Error fetching articles:', error);
@@ -14,6 +20,11 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: Request) {
   try {
+    const userId = await getAuthenticatedUserId();
+    if (!userId) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const body = await request.json();
     const { url, title, byline, content, projectId } = body || {};
 
@@ -21,7 +32,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'URL and content are required' }, { status: 400 });
     }
 
-    const id = await createArticleRecord({ url, title, byline, content, projectId });
+    const id = await createArticleRecord({ url, title, byline, content, projectId, userId });
     return NextResponse.json({ id });
   } catch (error) {
     console.error('Error creating article:', error);

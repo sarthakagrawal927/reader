@@ -1,16 +1,27 @@
 import { NextResponse } from 'next/server';
 import { Timestamp } from 'firebase-admin/firestore';
 import { db } from '../../../../lib/firebase-admin';
-import { fetchArticleById, normalizeNotes, sanitizeTitle } from '../../../../lib/articles-service';
+import {
+  fetchArticleById,
+  normalizeNotes,
+  sanitizeTitle,
+  verifyArticleOwnership,
+} from '../../../../lib/articles-service';
 import { ArticleStatus } from '../../../../types';
+import { getAuthenticatedUserId } from '../../../../lib/auth-api';
 
 const normalizeStatus = (status: unknown): ArticleStatus | null =>
   status === 'read' || status === 'in_progress' ? status : null;
 
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const userId = await getAuthenticatedUserId();
+    if (!userId) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const { id } = await params;
-    const article = await fetchArticleById(id);
+    const article = await fetchArticleById(id, userId);
     if (!article) {
       return NextResponse.json({ error: 'Article not found' }, { status: 404 });
     }
@@ -24,7 +35,17 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
 
 export async function PUT(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const userId = await getAuthenticatedUserId();
+    if (!userId) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const { id } = await params;
+    const isOwner = await verifyArticleOwnership(id, userId);
+    if (!isOwner) {
+      return NextResponse.json({ error: 'Not found or not authorized' }, { status: 404 });
+    }
+
     const body = await request.json();
     const { notes, title, status, projectId } = body || {};
 
@@ -66,7 +87,17 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
 
 export async function DELETE(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const userId = await getAuthenticatedUserId();
+    if (!userId) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const { id } = await params;
+    const isOwner = await verifyArticleOwnership(id, userId);
+    if (!isOwner) {
+      return NextResponse.json({ error: 'Not found or not authorized' }, { status: 404 });
+    }
+
     const docRef = db.collection('annotations').doc(id);
     await docRef.delete();
     return NextResponse.json({ success: true });

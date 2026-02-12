@@ -18,6 +18,7 @@ export interface Article {
   content: string;
   notes?: Note[];
   notesCount?: number;
+  userId?: string;
   projectId?: string;
   status?: ArticleStatus;
   createdAt?: string;
@@ -42,6 +43,7 @@ export interface ReaderSettings {
 export interface Project {
   id: string;
   name: string;
+  userId?: string;
   createdAt?: string;
   updatedAt?: string;
 }

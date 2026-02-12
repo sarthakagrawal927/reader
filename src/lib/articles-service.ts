@@ -83,19 +83,29 @@ const sanitizeHTML = (value: unknown) => sanitizeHtml(String(value ?? ''), htmlS
 export const sanitizeTitle = (value: unknown, fallback = '') =>
   sanitizePlainText(value ?? fallback).slice(0, 500);
 
-const DEFAULT_PROJECT_ID = 'default';
 const DEFAULT_PROJECT_NAME = 'Default';
 
 const normalizeStatus = (status: unknown): ArticleStatus => {
   return status === 'read' ? 'read' : 'in_progress';
 };
 
-export async function fetchArticleSummaries(projectId?: string): Promise<ArticleSummary[]> {
-  let collection = db.collection('annotations').orderBy('createdAt', 'desc');
+export async function fetchArticleSummaries(
+  userId: string,
+  projectId?: string
+): Promise<ArticleSummary[]> {
+  let query = db
+    .collection('annotations')
+    .where('userId', '==', userId)
+    .orderBy('createdAt', 'desc');
+
   if (projectId && projectId !== 'all') {
-    collection = db.collection('annotations').where('projectId', '==', projectId);
+    query = db
+      .collection('annotations')
+      .where('userId', '==', userId)
+      .where('projectId', '==', projectId);
   }
-  const snapshot = await collection.get();
+
+  const snapshot = await query.get();
 
   return snapshot.docs.map((doc) => {
     const data = doc.data();
@@ -105,7 +115,7 @@ export async function fetchArticleSummaries(projectId?: string): Promise<Article
       url: data.url,
       title: data.title || data.url,
       byline: data.byline,
-      projectId: data.projectId || DEFAULT_PROJECT_ID,
+      projectId: data.projectId || defaultProjectId(userId),
       status,
       notesCount:
         typeof data.notesCount === 'number'
@@ -119,10 +129,14 @@ export async function fetchArticleSummaries(projectId?: string): Promise<Article
   });
 }
 
-export async function fetchArticleById(id: string): Promise<Article | null> {
+export async function fetchArticleById(id: string, userId: string): Promise<Article | null> {
   const doc = await db.collection('annotations').doc(id).get();
   if (!doc.exists) return null;
   const data = doc.data()!;
+
+  // Ownership check — allow legacy docs (no userId) through
+  if (data.userId && data.userId !== userId) return null;
+
   const status = normalizeStatus(data.status);
   return {
     id: doc.id,
@@ -131,7 +145,7 @@ export async function fetchArticleById(id: string): Promise<Article | null> {
     byline: data.byline,
     content: data.content,
     notes: data.notes ?? [],
-    projectId: data.projectId || DEFAULT_PROJECT_ID,
+    projectId: data.projectId || defaultProjectId(userId),
     status,
     notesCount:
       typeof data.notesCount === 'number'
@@ -172,18 +186,22 @@ export function sanitizeArticlePayload(payload: {
   byline?: string;
   content: string;
   projectId?: string;
+  userId: string;
 }) {
   const sanitizedUrl = sanitizePlainText(payload.url);
   if (!sanitizedUrl) {
     throw new Error('URL is required');
   }
 
+  const defProjectId = defaultProjectId(payload.userId);
+
   return {
     url: sanitizedUrl,
     title: sanitizeTitle(payload.title, sanitizedUrl),
     byline: sanitizePlainText(payload.byline || ''),
     content: sanitizeHTML(payload.content),
-    projectId: sanitizePlainText(payload.projectId || DEFAULT_PROJECT_ID) || DEFAULT_PROJECT_ID,
+    projectId: sanitizePlainText(payload.projectId || defProjectId) || defProjectId,
+    userId: payload.userId,
   };
 }
 
@@ -193,6 +211,7 @@ export async function createArticleRecord(payload: {
   byline?: string;
   content: string;
   projectId?: string;
+  userId: string;
 }) {
   const sanitized = sanitizeArticlePayload(payload);
   const now = Timestamp.now();
@@ -207,15 +226,21 @@ export async function createArticleRecord(payload: {
   return docRef.id;
 }
 
+function defaultProjectId(userId: string) {
+  return `${userId}_default`;
+}
+
 const sanitizeProjectName = (value: unknown) => sanitizeTitle(value, DEFAULT_PROJECT_NAME);
 
-export async function ensureDefaultProject(): Promise<Project> {
-  const defaultRef = db.collection('projects').doc(DEFAULT_PROJECT_ID);
+export async function ensureDefaultProject(userId: string): Promise<Project> {
+  const docId = defaultProjectId(userId);
+  const defaultRef = db.collection('projects').doc(docId);
   const snapshot = await defaultRef.get();
   if (!snapshot.exists) {
     const now = Timestamp.now();
     await defaultRef.set({
       name: DEFAULT_PROJECT_NAME,
+      userId,
       createdAt: now,
       updatedAt: now,
     });
@@ -223,16 +248,21 @@ export async function ensureDefaultProject(): Promise<Project> {
   const fresh = await defaultRef.get();
   const data = fresh.data() || {};
   return {
-    id: DEFAULT_PROJECT_ID,
+    id: docId,
     name: data.name || DEFAULT_PROJECT_NAME,
     createdAt: data.createdAt?.toDate().toISOString(),
     updatedAt: data.updatedAt?.toDate().toISOString(),
   };
 }
 
-export async function fetchProjects(): Promise<Project[]> {
-  const defaultProject = await ensureDefaultProject();
-  const snapshot = await db.collection('projects').orderBy('createdAt', 'desc').get();
+export async function fetchProjects(userId: string): Promise<Project[]> {
+  const defaultProject = await ensureDefaultProject(userId);
+  const snapshot = await db
+    .collection('projects')
+    .where('userId', '==', userId)
+    .orderBy('createdAt', 'desc')
+    .get();
+
   const projects: Project[] = snapshot.docs.map((doc) => {
     const data = doc.data();
     return {
@@ -243,7 +273,7 @@ export async function fetchProjects(): Promise<Project[]> {
     };
   });
 
-  const merged = [defaultProject, ...projects.filter((p) => p.id !== DEFAULT_PROJECT_ID)];
+  const merged = [defaultProject, ...projects.filter((p) => p.id !== defaultProject.id)];
   const seen = new Set<string>();
   return merged.filter((p) => {
     if (seen.has(p.id)) return false;
@@ -252,7 +282,7 @@ export async function fetchProjects(): Promise<Project[]> {
   });
 }
 
-export async function createProject(name: string): Promise<string> {
+export async function createProject(name: string, userId: string): Promise<string> {
   const sanitizedName = sanitizeProjectName(name);
   if (!sanitizedName) {
     throw new Error('Project name is required');
@@ -260,28 +290,47 @@ export async function createProject(name: string): Promise<string> {
   const now = Timestamp.now();
   const ref = await db.collection('projects').add({
     name: sanitizedName,
+    userId,
     createdAt: now,
     updatedAt: now,
   });
   return ref.id;
 }
 
-export async function moveArticlesToDefault(projectId: string) {
-  if (projectId === DEFAULT_PROJECT_ID) return;
+export async function moveArticlesToDefault(projectId: string, userId: string) {
+  const defId = defaultProjectId(userId);
+  if (projectId === defId) return;
   const snapshot = await db.collection('annotations').where('projectId', '==', projectId).get();
   const batch = db.batch();
   snapshot.forEach((doc) => {
-    batch.update(doc.ref, { projectId: DEFAULT_PROJECT_ID, updatedAt: Timestamp.now() });
+    batch.update(doc.ref, { projectId: defId, updatedAt: Timestamp.now() });
   });
   if (!snapshot.empty) {
     await batch.commit();
   }
 }
 
-export async function deleteProject(projectId: string) {
-  if (projectId === DEFAULT_PROJECT_ID) {
+export async function deleteProject(projectId: string, userId: string) {
+  const defId = defaultProjectId(userId);
+  if (projectId === defId) {
     throw new Error('Cannot delete default project');
   }
-  await moveArticlesToDefault(projectId);
+
+  // Verify ownership
+  const doc = await db.collection('projects').doc(projectId).get();
+  if (!doc.exists) throw new Error('Project not found');
+  const data = doc.data()!;
+  if (data.userId && data.userId !== userId) throw new Error('Not authorized');
+
+  await moveArticlesToDefault(projectId, userId);
   await db.collection('projects').doc(projectId).delete();
+}
+
+export async function verifyArticleOwnership(articleId: string, userId: string): Promise<boolean> {
+  const doc = await db.collection('annotations').doc(articleId).get();
+  if (!doc.exists) return false;
+  const data = doc.data()!;
+  // Allow legacy docs (no userId)
+  if (data.userId && data.userId !== userId) return false;
+  return true;
 }

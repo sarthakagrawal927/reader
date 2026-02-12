@@ -1,9 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createProject, fetchProjects } from '../../../lib/articles-service';
+import { getAuthenticatedUserId } from '../../../lib/auth-api';
 
 export async function GET() {
   try {
-    const projects = await fetchProjects();
+    const userId = await getAuthenticatedUserId();
+    if (!userId) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const projects = await fetchProjects(userId);
     return NextResponse.json(projects);
   } catch (error) {
     console.error('Error fetching projects:', error);
@@ -13,12 +19,17 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   try {
+    const userId = await getAuthenticatedUserId();
+    if (!userId) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const body = await request.json();
     const { name } = body || {};
     if (typeof name !== 'string' || !name.trim()) {
       return NextResponse.json({ error: 'Project name is required' }, { status: 400 });
     }
-    const id = await createProject(name);
+    const id = await createProject(name, userId);
     return NextResponse.json({ id });
   } catch (error) {
     console.error('Error creating project:', error);

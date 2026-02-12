@@ -26,6 +26,7 @@ import {
 import { Label } from './ui/label';
 import { Badge } from './ui/badge';
 import { MoreVertical } from 'lucide-react';
+import { useAuth } from './AuthProvider';
 
 export default function HomeClient() {
   const [url, setUrl] = useState('');
@@ -38,6 +39,7 @@ export default function HomeClient() {
 
   const router = useRouter();
   const queryClient = useQueryClient();
+  const { user, logout } = useAuth();
 
   const {
     data: articles = [],
@@ -48,7 +50,9 @@ export default function HomeClient() {
     queryFn: async () => {
       const response = await fetch('/api/articles', { cache: 'no-store' });
       if (!response.ok) {
-        throw new Error('Failed to fetch articles');
+        const err = new Error('Failed to fetch articles');
+        (err as Error & { status: number }).status = response.status;
+        throw err;
       }
       return response.json();
     },
@@ -63,7 +67,9 @@ export default function HomeClient() {
     queryFn: async () => {
       const response = await fetch('/api/projects', { cache: 'no-store' });
       if (!response.ok) {
-        throw new Error('Failed to fetch projects');
+        const err = new Error('Failed to fetch projects');
+        (err as Error & { status: number }).status = response.status;
+        throw err;
       }
       return response.json();
     },
@@ -276,7 +282,24 @@ export default function HomeClient() {
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
           <div>
             <h1 className="text-3xl font-bold text-white">My Library</h1>
-            <p className="text-gray-400 mt-1">Manage your annotated articles</p>
+            <div className="flex items-center gap-3 mt-1">
+              <p className="text-gray-400">Manage your annotated articles</p>
+              {user && (
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-gray-500">{user.email}</span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={async () => {
+                      await logout();
+                      router.push('/login');
+                    }}
+                  >
+                    Sign out
+                  </Button>
+                </div>
+              )}
+            </div>
           </div>
 
           <div className="w-full md:w-auto bg-gray-900/70 border border-gray-800 rounded-xl p-4 shadow-lg backdrop-blur">
