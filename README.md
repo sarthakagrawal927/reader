@@ -2,24 +2,77 @@
 
 A modern web application for capturing and annotating articles with a distraction-free reading experience.
 
-## What It Does
+## Problem
 
-Web Annotator lets you save web articles in a clean, readable format and add your own notes and highlights. Think of it as a personal research library where you can:
+Information overload is real. You find valuable articles across the web, but there's no easy way to save them in a clean format, annotate them with your thoughts, and organize them for future reference. Browser bookmarks are cluttered, read-it-later apps lack annotation capabilities, and note-taking tools don't handle web content well.
 
-- Capture articles from any URL in a clean, reader-friendly format
-- Add notes and annotations as you read
-- Organize articles into projects
-- Customize your reading experience (font, size, theme)
-- Track your reading progress
+Web Annotator solves this by providing a personal research library where you can capture, read, annotate, and organize web content in one place.
 
-## Tech Stack
+## Features
+
+- **Clean Article Extraction**: Save articles from any URL using Mozilla Readability
+- **Rich Annotations**: Add contextual notes with optional DOM anchoring
+- **AI-Powered Chat**: Ask questions about your articles and notes using BYOK providers (OpenAI, Anthropic, Gemini, Gateway) or local CLI mode
+- **Project Organization**: Group related articles into projects
+- **Customizable Reader**: Adjust theme (light/dark/sepia), font family (sans/serif/mono), and text size
+- **Reading Progress**: Track which articles you're reading or have completed
+- **Secure & Private**: Google Sign-In authentication with per-user data isolation
+
+## Architecture
+
+```mermaid
+graph TB
+    subgraph "Client Layer"
+        UI[React 19 + Next.js 16 Frontend]
+        UI --> |Tailwind CSS| Styling[UI Components]
+        UI --> |React Query| State[State Management]
+    end
+
+    subgraph "API Layer"
+        API[Next.js API Routes]
+        API --> Articles[/api/articles]
+        API --> Projects[/api/projects]
+        API --> Auth[/api/auth]
+        API --> AI[/api/ai]
+        API --> Snapshot[/api/snapshot]
+    end
+
+    subgraph "Backend Services"
+        Firebase[Firebase]
+        Firebase --> FireAuth[Authentication]
+        Firebase --> Firestore[Firestore Database]
+
+        External[External Services]
+        External --> Readability[Mozilla Readability]
+        External --> AIProviders[AI Providers]
+        AIProviders --> OpenAI[OpenAI]
+        AIProviders --> Anthropic[Anthropic]
+        AIProviders --> Gemini[Google Gemini]
+        AIProviders --> Gateway[Custom Gateway]
+        AIProviders --> CLIBridge[Local CLI Bridge]
+    end
+
+    UI --> API
+    API --> Firebase
+    API --> External
+
+    classDef frontend fill:#3b82f6,stroke:#1e40af,color:#fff
+    classDef backend fill:#10b981,stroke:#047857,color:#fff
+    classDef external fill:#f59e0b,stroke:#d97706,color:#fff
+
+    class UI,Styling,State frontend
+    class API,Articles,Projects,Auth,AI,Snapshot,Firebase,FireAuth,Firestore backend
+    class External,Readability,AIProviders,OpenAI,Anthropic,Gemini,Gateway,CLIBridge external
+```
+
+### Tech Stack
 
 - **Frontend**: Next.js 16, React 19, TypeScript, Tailwind CSS
 - **Backend**: Firebase (Authentication + Firestore)
 - **AI Integration**: BYOK chat providers + local CLI bridge support
 - **Deployment**: Optimized for Vercel
 
-## Quick Start
+## Getting Started
 
 ### Prerequisites
 
@@ -28,7 +81,7 @@ Web Annotator lets you save web articles in a clean, readable format and add you
 
 ### Installation
 
-1. **Clone and install**
+1. Clone the repository and install dependencies:
 
    ```bash
    git clone <repository-url>
@@ -36,93 +89,51 @@ Web Annotator lets you save web articles in a clean, readable format and add you
    npm install
    ```
 
-2. **Set up environment variables**
+2. Set up Firebase:
+   - Create a Firebase project at [console.firebase.google.com](https://console.firebase.google.com/)
+   - Enable Google Sign-In in Authentication settings
+   - Create a Firestore database
+   - Download your service account JSON from Project Settings > Service Accounts
+   - Save it as `firebase-service-account.json` in the project root
+
+3. Configure environment variables:
 
    ```bash
    cp env.example .env.local
    ```
 
-   Edit `.env.local` and add your Firebase credentials:
+   Edit `.env.local` with your Firebase credentials:
 
    ```env
-   # Firebase Client Configuration
    NEXT_PUBLIC_FIREBASE_API_KEY=your_api_key
    NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=your_project.firebaseapp.com
    NEXT_PUBLIC_FIREBASE_PROJECT_ID=your_project_id
    NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=your_project.appspot.com
    NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=your_sender_id
    NEXT_PUBLIC_FIREBASE_APP_ID=your_app_id
-
-   # Firebase Admin (for local development)
    FIREBASE_SERVICE_ACCOUNT_PATH=./firebase-service-account.json
-
-   # Optional: local CLI bridge endpoint for AI chat local mode
-   CLI_BRIDGE_URL=http://127.0.0.1:3456
+   CLI_BRIDGE_URL=http://127.0.0.1:3456  # Optional: for local AI mode
    ```
 
-3. **Run the development server**
+4. Run the development server:
 
    ```bash
    npm run dev
    ```
 
-   Optional: start with local CLI chat bridge (`../cli-bridge`) for Codex/Claude/Gemini CLI:
+   Or with local AI CLI bridge:
 
    ```bash
    npm run dev:with-cli
    ```
 
-4. **Open [http://localhost:3000](http://localhost:3000)**
+5. Open [http://localhost:3000](http://localhost:3000)
 
-### Firebase Setup
-
-1. Create a Firebase project at [console.firebase.google.com](https://console.firebase.google.com/)
-2. Enable Google Sign-In in Authentication settings
-3. Create a Firestore database
-4. Download your service account JSON from Project Settings > Service Accounts
-5. Save it as `firebase-service-account.json` in the project root
-
-## Basic Usage
-
-### Importing Articles
-
-1. Sign in with your Google account
-2. Paste a URL into the input field on the home page
-3. Click "Import" to save the article
-
-### Reading and Annotating
-
-1. Click any article in your library to open the reader
-2. Use the toolbar to customize appearance:
-   - Adjust font size (XS to 2XL)
-   - Change font family (Sans, Serif, Mono)
-   - Switch theme (Light, Dark, Sepia)
-3. Click "Add Note" to create annotations
-4. Drag notes to position them anywhere on screen
-
-### Notes AI Chat
-
-1. In reader view, open the right sidebar and switch to **AI Chat**
-2. Pick a provider and model from the chat settings
-3. For cloud providers (OpenAI/Anthropic/Gemini/Gateway), paste your own API key (stored only in local browser storage)
-4. For local provider mode, run `../cli-bridge` or use `npm run dev:with-cli`
-5. Ask questions using article + note context
-
-### Organizing with Projects
-
-1. Create projects from the home page
-2. Assign articles to projects when importing or via the article menu
-3. Filter your library by project
-4. Mark articles as "In Progress" or "Read"
-
-## Development
-
-### Available Commands
+### Development Commands
 
 ```bash
 npm run dev          # Start development server
-npm run dev:with-cli # Start Next.js + local ../cli-bridge
-npm run cli-bridge   # Start only local ../cli-bridge
+npm run dev:with-cli # Start with local AI CLI bridge
 npm run build        # Build for production
 npm run start        # Start production server
 npm run lint         # Run ESLint
@@ -130,38 +141,17 @@ npm run format       # Format code with Prettier
 npm run type-check   # Check TypeScript types
 ```
 
-### Code Quality
+## Deployment
 
-This project uses automated pre-commit hooks that run:
-
-- Prettier (code formatting)
-- ESLint (code quality)
-- TypeScript (type checking)
-
-Simply make your changes and commit - the hooks will ensure code quality automatically.
-
-### Commit Convention
-
-We use [Conventional Commits](https://www.conventionalcommits.org/):
-
-```
-<type>(<scope>): <description>
-
-Examples:
-feat(reader): add PDF export
-fix(auth): resolve token refresh issue
-chore: update dependencies
-```
-
-## Deployment to Vercel
+### Vercel
 
 1. Push your code to GitHub
 2. Import the project in Vercel
-3. Add environment variables in Vercel project settings:
-   - All `NEXT_PUBLIC_*` variables
+3. Add environment variables:
+   - All `NEXT_PUBLIC_*` variables from your `.env.local`
    - `FIREBASE_SERVICE_ACCOUNT_KEY` (base64-encoded service account JSON)
 
-To encode your service account for Vercel:
+Encode your service account:
 
 ```bash
 # macOS
@@ -177,35 +167,33 @@ base64 -w0 firebase-service-account.json
 web-annotator/
 ├── src/
 │   ├── app/              # Next.js pages and API routes
+│   │   ├── api/          # Backend API endpoints
+│   │   ├── login/        # Authentication pages
+│   │   └── reader/       # Article reader view
 │   ├── components/       # React components
 │   ├── lib/              # Business logic and utilities
 │   └── types.ts          # TypeScript definitions
 ├── public/               # Static assets
-├── AGENTS.md             # AI agent development guide
-└── README.md             # This file
+└── AGENTS.md             # Development guide
 ```
 
-## Features
+## Development
 
-### Current
+This project uses automated pre-commit hooks for code quality:
 
-- Clean article extraction using Mozilla Readability
-- Google Sign-In authentication
-- Per-user data isolation
-- Contextual annotations with optional DOM anchoring
-- AI chat in notes sidebar (BYOK + local CLI mode)
-- Project-based organization
-- Customizable reader (theme, font, size)
-- Reading progress tracking
+- Prettier (formatting)
+- ESLint (linting)
+- TypeScript (type checking)
 
-### Roadmap
+Commit convention follows [Conventional Commits](https://www.conventionalcommits.org/):
 
-- PDF and image document support
-- YouTube videos with timestamped comments
-- Export to Markdown/PDF
-- Browser extension for quick capture
-- Collaboration features
-- Canvas view for linking related documents
+```
+feat(reader): add PDF export
+fix(auth): resolve token refresh issue
+chore: update dependencies
+```
+
+For comprehensive development documentation, see [AGENTS.md](./AGENTS.md).
 
 ## Security
 
@@ -213,15 +201,8 @@ web-annotator/
 - User authentication required for all operations
 - Per-user data isolation enforced at the database level
 - Ownership verification on all operations
-
-## For Developers
-
-For comprehensive development documentation including architecture, patterns, and technical decisions, see **[AGENTS.md](./AGENTS.md)**.
+- BYOK model for AI providers (API keys stored in browser only)
 
 ## License
 
 This project is private and not licensed for public use.
-
-## Support
-
-For issues or questions, please open an issue on GitHub.
