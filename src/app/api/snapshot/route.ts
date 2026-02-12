@@ -1,35 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { chromium } from 'playwright';
-import { join } from 'node:path';
-import { existsSync } from 'node:fs';
-
-const readabilityScriptPath = (() => {
-  const scriptPath = join(
-    process.cwd(),
-    'node_modules',
-    '@mozilla',
-    'readability',
-    'Readability.js'
-  );
-
-  if (!existsSync(scriptPath)) {
-    throw new Error(`Readability script not found at ${scriptPath}`);
-  }
-
-  return scriptPath;
-})();
-
-type ReadabilityArticle = {
-  title: string;
-  content: string;
-  byline: string | null;
-  siteName: string | null;
-};
-
-type ReadabilityWindow = Window &
-  typeof globalThis & {
-    Readability?: new (doc: Document) => { parse(): ReadabilityArticle | null };
-  };
+import { Readability } from '@mozilla/readability';
+import { parseHTML } from 'linkedom';
 
 export async function GET(req: NextRequest) {
   const targetUrl = req.nextUrl.searchParams.get('url');
@@ -38,61 +9,40 @@ export async function GET(req: NextRequest) {
     return new NextResponse('URL parameter is required', { status: 400 });
   }
 
-  let browser;
   try {
-    // We still use Playwright to fetch the page content because it handles dynamic JS better than a simple fetch
-    browser = await chromium.launch();
-    const page = await browser.newPage();
-
-    // Block resources to speed up loading
-    await page.route('**/*', (route) => {
-      const type = route.request().resourceType();
-      if (['image', 'stylesheet', 'font', 'media'].includes(type)) {
-        route.abort();
-      } else {
-        route.continue();
-      }
+    const response = await fetch(targetUrl, {
+      headers: {
+        'User-Agent':
+          'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+        Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+      },
+      signal: AbortSignal.timeout(30000),
     });
 
-    await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
-    await page.addScriptTag({ path: readabilityScriptPath });
+    if (!response.ok) {
+      throw new Error(`Failed to fetch URL: ${response.status} ${response.statusText}`);
+    }
 
-    const article = await page.evaluate<ReadabilityArticle | null>(() => {
-      const Reader = (window as ReadabilityWindow).Readability;
-      if (!Reader) {
-        return null;
-      }
-      const reader = new Reader(document);
-      const result = reader.parse();
-      return result
-        ? {
-            title: result.title ?? '',
-            content: result.content ?? '',
-            byline: result.byline ?? null,
-            siteName: result.siteName ?? null,
-          }
-        : null;
-    });
+    const html = await response.text();
+    const { document } = parseHTML(html);
+
+    const reader = new Readability(document);
+    const article = reader.parse();
 
     if (!article) {
       throw new Error('Failed to parse article content');
     }
 
-    await browser.close();
-
     return NextResponse.json({
       snapshot: {
-        title: article.title,
-        content: article.content,
-        byline: article.byline,
-        siteName: article.siteName,
+        title: article.title ?? '',
+        content: article.content ?? '',
+        byline: article.byline ?? null,
+        siteName: article.siteName ?? null,
         url: targetUrl,
       },
     });
   } catch (error: unknown) {
-    if (browser) {
-      await browser.close();
-    }
     console.error('Snapshot error:', error);
     return new NextResponse(
       JSON.stringify({

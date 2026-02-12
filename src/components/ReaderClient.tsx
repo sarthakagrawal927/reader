@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation';
 import { Article, Note, ReaderSettings } from '../types';
 import { ReaderView, getThemeClasses } from './ReaderView';
 import { AppearanceToolbar } from './AppearanceToolbar';
+import { Navbar } from './Navbar';
 
 const ANNOTATABLE_SELECTOR = [
   'p',
@@ -587,187 +588,190 @@ export default function ReaderClient({ articleId }: { articleId: string }) {
   if (!article) return null;
 
   return (
-    <div className="flex h-screen bg-gradient-to-b from-black via-gray-950 to-gray-900 font-sans text-gray-100 overflow-hidden p-4 md:p-6">
-      {/* LEFT PANEL: Website Content */}
-      <div
-        className="h-full flex flex-col bg-gray-900/70 backdrop-blur border border-gray-800 rounded-2xl overflow-hidden shadow-2xl relative"
-        style={{ width: `${leftPanelWidth}%` }}
-      >
-        {/* Header */}
-        <div className="p-4 border-b border-gray-800 bg-gray-900/80 backdrop-blur-md z-10 shadow-md flex flex-wrap items-center gap-4">
-          <button
-            onClick={() => router.push('/')}
-            className="p-2 rounded-lg bg-gray-800/60 hover:bg-gray-800 text-gray-200 transition-colors border border-gray-700"
-            title="Back to Library"
-          >
-            ←
-          </button>
+    <div className="flex flex-col h-screen bg-gradient-to-b from-black via-gray-950 to-gray-900 font-sans text-gray-100 overflow-hidden">
+      <Navbar />
+      <div className="flex flex-1 overflow-hidden p-4 md:p-6">
+        {/* LEFT PANEL: Website Content */}
+        <div
+          className="h-full flex flex-col bg-gray-900/70 backdrop-blur border border-gray-800 rounded-2xl overflow-hidden shadow-2xl relative"
+          style={{ width: `${leftPanelWidth}%` }}
+        >
+          {/* Header */}
+          <div className="p-4 border-b border-gray-800 bg-gray-900/80 backdrop-blur-md z-10 shadow-md flex flex-wrap items-center gap-4">
+            <button
+              onClick={() => router.push('/')}
+              className="p-2 rounded-lg bg-gray-800/60 hover:bg-gray-800 text-gray-200 transition-colors border border-gray-700"
+              title="Back to Library"
+            >
+              ←
+            </button>
 
-          <div className="flex-1 min-w-[220px]">
-            {isTitleEditing ? (
-              <input
-                type="text"
-                value={titleDraft}
-                onChange={(e) => {
-                  resetTitleMutation();
-                  setTitleDraft(e.target.value);
-                }}
-                onBlur={handleTitleBlur}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.currentTarget.blur();
-                  } else if (e.key === 'Escape') {
-                    setTitleDraft(article?.title || article?.url || '');
-                    setIsTitleEditing(false);
-                  }
-                }}
-                placeholder={article?.title || article?.url || 'Untitled article'}
-                maxLength={120}
-                autoFocus
-                className="w-full bg-transparent text-2xl font-semibold text-white border-b border-blue-500 focus:outline-none pb-1 transition-colors"
-              />
-            ) : (
-              <button
-                type="button"
-                onClick={() => setIsTitleEditing(true)}
-                className="w-full text-left group"
-                title="Click to edit title"
+            <div className="flex-1 min-w-[220px]">
+              {isTitleEditing ? (
+                <input
+                  type="text"
+                  value={titleDraft}
+                  onChange={(e) => {
+                    resetTitleMutation();
+                    setTitleDraft(e.target.value);
+                  }}
+                  onBlur={handleTitleBlur}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.currentTarget.blur();
+                    } else if (e.key === 'Escape') {
+                      setTitleDraft(article?.title || article?.url || '');
+                      setIsTitleEditing(false);
+                    }
+                  }}
+                  placeholder={article?.title || article?.url || 'Untitled article'}
+                  maxLength={120}
+                  autoFocus
+                  className="w-full bg-transparent text-2xl font-semibold text-white border-b border-blue-500 focus:outline-none pb-1 transition-colors"
+                />
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setIsTitleEditing(true)}
+                  className="w-full text-left group"
+                  title="Click to edit title"
+                >
+                  <h1 className="text-2xl font-semibold text-white group-hover:text-blue-300 transition-colors leading-snug">
+                    {titleDraft.trim() || article?.title || article?.url || 'Untitled article'}
+                  </h1>
+                  <p className="text-xs text-gray-500 opacity-0 group-hover:opacity-100 transition-opacity">
+                    Click to edit title
+                  </p>
+                </button>
+              )}
+              {(isTitleError || isTitleSaving) && (
+                <div className="text-xs text-gray-500 h-4 mt-1">
+                  {isTitleError ? (
+                    <span className="text-red-400">{titleErrorMessage}</span>
+                  ) : isTitleSaving ? (
+                    <span className="text-yellow-400">Saving title...</span>
+                  ) : null}
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center gap-4 ml-auto">
+              <AppearanceToolbar settings={settings} onUpdate={updateSettings} />
+              <span
+                className={`text-xs font-medium px-2 py-1 rounded-full ${isNotesSaving ? 'bg-yellow-900/30 text-yellow-500' : 'bg-green-900/30 text-green-500'}`}
               >
-                <h1 className="text-2xl font-semibold text-white group-hover:text-blue-300 transition-colors leading-snug">
-                  {titleDraft.trim() || article?.title || article?.url || 'Untitled article'}
-                </h1>
-                <p className="text-xs text-gray-500 opacity-0 group-hover:opacity-100 transition-opacity">
-                  Click to edit title
-                </p>
+                {isNotesSaving ? 'Saving...' : 'Saved'}
+              </span>
+
+              <button
+                onClick={() => setIsAnnotating(!isAnnotating)}
+                className={`px-4 py-2 rounded-lg font-medium transition-colors border ${
+                  isAnnotating
+                    ? 'bg-yellow-500/20 text-yellow-300 border-yellow-500/50'
+                    : 'bg-gray-800 text-gray-300 hover:bg-gray-700 border-gray-700'
+                }`}
+              >
+                {isAnnotating ? 'Click to Place Note' : '+ Add Note'}
               </button>
-            )}
-            {(isTitleError || isTitleSaving) && (
-              <div className="text-xs text-gray-500 h-4 mt-1">
-                {isTitleError ? (
-                  <span className="text-red-400">{titleErrorMessage}</span>
-                ) : isTitleSaving ? (
-                  <span className="text-yellow-400">Saving title...</span>
-                ) : null}
+            </div>
+          </div>
+
+          {/* Article Content */}
+          <div
+            ref={snapshotContainerRef}
+            className={`flex-grow overflow-y-auto relative scroll-smooth ${isAnnotating ? 'cursor-crosshair' : ''} ${getThemeClasses(settings.theme)}`}
+            onClick={handleContentClick}
+          >
+            <div className="relative min-h-full">
+              <ReaderView
+                content={article.content}
+                title={article.title}
+                byline={article.byline}
+                settings={settings}
+                contentRef={contentRef}
+              />
+
+              {Array.from(notesByAnchor.entries()).map(([anchorIndex, groupedNotes]) => {
+                const anchorElement = annotatableElements[anchorIndex];
+                if (!anchorElement) return null;
+
+                return (
+                  <NoteMarkerGroupMemo
+                    key={`anchor-${anchorIndex}`}
+                    anchorElement={anchorElement}
+                    notes={groupedNotes}
+                    onScrollTo={scrollToNote}
+                    registerMarker={registerMarker}
+                    onStartDrag={startMarkerDrag}
+                    ignoreClicksRef={ignoreMarkerClickRef}
+                    onShowTooltip={showTooltip}
+                    onHideTooltip={hideTooltip}
+                    onMoveTooltip={moveTooltip}
+                  />
+                );
+              })}
+
+              {/* Annotation Overlay */}
+              {isAnnotating && (
+                <div className="absolute inset-0 bg-blue-500/10 z-10 pointer-events-none" />
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* RESIZER */}
+        <div
+          className="w-1 bg-gray-800 hover:bg-blue-500 cursor-col-resize transition-colors z-30 flex items-center justify-center relative group mx-1 rounded-full"
+          onMouseDown={startResizing}
+        >
+          <div className="absolute inset-y-0 -left-2 -right-2 z-30" />
+          <div className="w-1 h-8 bg-gray-600 rounded-full group-hover:bg-white" />
+        </div>
+
+        {/* RIGHT PANEL: Notes */}
+        <div
+          className="h-full bg-gray-900/70 backdrop-blur flex flex-col shadow-2xl z-20 border border-gray-800 rounded-2xl"
+          style={{ width: `${100 - leftPanelWidth}%` }}
+        >
+          <div className="p-4 border-b border-gray-800 bg-gray-900/80">
+            <h2 className="text-lg font-semibold text-gray-100">Notes</h2>
+            <p className="text-sm text-gray-500">{notes.length} notes added</p>
+          </div>
+
+          <div className="flex-grow overflow-y-auto p-4 space-y-4">
+            {notes.length === 0 && (
+              <div className="text-center text-gray-500 mt-10">
+                <p>No notes yet.</p>
+                <p className="text-sm">
+                  Click &quot;+ Add Note&quot; and select an area on the left.
+                </p>
               </div>
             )}
-          </div>
 
-          <div className="flex items-center gap-4 ml-auto">
-            <AppearanceToolbar settings={settings} onUpdate={updateSettings} />
-            <span
-              className={`text-xs font-medium px-2 py-1 rounded-full ${isNotesSaving ? 'bg-yellow-900/30 text-yellow-500' : 'bg-green-900/30 text-green-500'}`}
-            >
-              {isNotesSaving ? 'Saving...' : 'Saved'}
-            </span>
-
-            <button
-              onClick={() => setIsAnnotating(!isAnnotating)}
-              className={`px-4 py-2 rounded-lg font-medium transition-colors border ${
-                isAnnotating
-                  ? 'bg-yellow-500/20 text-yellow-300 border-yellow-500/50'
-                  : 'bg-gray-800 text-gray-300 hover:bg-gray-700 border-gray-700'
-              }`}
-            >
-              {isAnnotating ? 'Click to Place Note' : '+ Add Note'}
-            </button>
+            {notes.map((note, index) => (
+              <NoteCard
+                key={note.id}
+                note={note}
+                index={index}
+                onScrollTo={scrollToNote}
+                onDelete={handleDeleteNote}
+                onChange={handleNoteChange}
+              />
+            ))}
           </div>
         </div>
-
-        {/* Article Content */}
-        <div
-          ref={snapshotContainerRef}
-          className={`flex-grow overflow-y-auto relative scroll-smooth ${isAnnotating ? 'cursor-crosshair' : ''} ${getThemeClasses(settings.theme)}`}
-          onClick={handleContentClick}
-        >
-          <div className="relative min-h-full">
-            <ReaderView
-              content={article.content}
-              title={article.title}
-              byline={article.byline}
-              settings={settings}
-              contentRef={contentRef}
-            />
-
-            {Array.from(notesByAnchor.entries()).map(([anchorIndex, groupedNotes]) => {
-              const anchorElement = annotatableElements[anchorIndex];
-              if (!anchorElement) return null;
-
-              return (
-                <NoteMarkerGroupMemo
-                  key={`anchor-${anchorIndex}`}
-                  anchorElement={anchorElement}
-                  notes={groupedNotes}
-                  onScrollTo={scrollToNote}
-                  registerMarker={registerMarker}
-                  onStartDrag={startMarkerDrag}
-                  ignoreClicksRef={ignoreMarkerClickRef}
-                  onShowTooltip={showTooltip}
-                  onHideTooltip={hideTooltip}
-                  onMoveTooltip={moveTooltip}
-                />
-              );
-            })}
-
-            {/* Annotation Overlay */}
-            {isAnnotating && (
-              <div className="absolute inset-0 bg-blue-500/10 z-10 pointer-events-none" />
-            )}
-          </div>
-        </div>
+        {typeof document !== 'undefined' && activeTooltip
+          ? createPortal(
+              <div
+                className="annotation-tooltip-floating"
+                style={{ left: activeTooltip.x, top: activeTooltip.y }}
+              >
+                {activeTooltip.text}
+              </div>,
+              document.body
+            )
+          : null}
       </div>
-
-      {/* RESIZER */}
-      <div
-        className="w-1 bg-gray-800 hover:bg-blue-500 cursor-col-resize transition-colors z-30 flex items-center justify-center relative group mx-1 rounded-full"
-        onMouseDown={startResizing}
-      >
-        <div className="absolute inset-y-0 -left-2 -right-2 z-30" />
-        <div className="w-1 h-8 bg-gray-600 rounded-full group-hover:bg-white" />
-      </div>
-
-      {/* RIGHT PANEL: Notes */}
-      <div
-        className="h-full bg-gray-900/70 backdrop-blur flex flex-col shadow-2xl z-20 border border-gray-800 rounded-2xl"
-        style={{ width: `${100 - leftPanelWidth}%` }}
-      >
-        <div className="p-4 border-b border-gray-800 bg-gray-900/80">
-          <h2 className="text-lg font-semibold text-gray-100">Notes</h2>
-          <p className="text-sm text-gray-500">{notes.length} notes added</p>
-        </div>
-
-        <div className="flex-grow overflow-y-auto p-4 space-y-4">
-          {notes.length === 0 && (
-            <div className="text-center text-gray-500 mt-10">
-              <p>No notes yet.</p>
-              <p className="text-sm">
-                Click &quot;+ Add Note&quot; and select an area on the left.
-              </p>
-            </div>
-          )}
-
-          {notes.map((note, index) => (
-            <NoteCard
-              key={note.id}
-              note={note}
-              index={index}
-              onScrollTo={scrollToNote}
-              onDelete={handleDeleteNote}
-              onChange={handleNoteChange}
-            />
-          ))}
-        </div>
-      </div>
-      {typeof document !== 'undefined' && activeTooltip
-        ? createPortal(
-            <div
-              className="annotation-tooltip-floating"
-              style={{ left: activeTooltip.x, top: activeTooltip.y }}
-            >
-              {activeTooltip.text}
-            </div>,
-            document.body
-          )
-        : null}
     </div>
   );
 }
