@@ -9,6 +9,7 @@ export default function LoginClient() {
   const { signInWithGoogle, loading } = useAuth();
   const [error, setError] = useState<string | null>(null);
   const [signingIn, setSigningIn] = useState(false);
+  const [redirecting, setRedirecting] = useState(false);
   const router = useRouter();
 
   const handleSignIn = async () => {
@@ -16,14 +17,25 @@ export default function LoginClient() {
     setSigningIn(true);
     try {
       await signInWithGoogle();
+      setRedirecting(true);
       router.push('/');
     } catch (err) {
       console.error('Sign-in error:', err);
       setError('Failed to sign in. Please try again.');
-    } finally {
       setSigningIn(false);
     }
   };
+
+  if (redirecting) {
+    return (
+      <div className="min-h-screen bg-gradient-to-b from-black via-gray-950 to-gray-900 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white mx-auto mb-4"></div>
+          <p className="text-gray-400">Loading your library...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-black via-gray-950 to-gray-900 flex items-center justify-center p-8">
