@@ -3,6 +3,7 @@ import { Timestamp } from 'firebase-admin/firestore';
 import { db } from '../../../../lib/firebase-admin';
 import {
   fetchArticleById,
+  normalizeAIChatMessages,
   normalizeNotes,
   sanitizeTitle,
   verifyArticleOwnership,
@@ -47,7 +48,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
     }
 
     const body = await request.json();
-    const { notes, title, status, projectId } = body || {};
+    const { notes, aiChat, title, status, projectId } = body || {};
 
     const docRef = db.collection('annotations').doc(id);
     const updateData: Record<string, unknown> = {
@@ -58,6 +59,10 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
       const normalized = normalizeNotes(notes);
       updateData.notes = normalized;
       updateData.notesCount = normalized.length;
+    }
+
+    if (aiChat !== undefined) {
+      updateData.aiChat = normalizeAIChatMessages(aiChat);
     }
 
     if (typeof title === 'string') {
