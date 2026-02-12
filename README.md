@@ -1,52 +1,227 @@
 # Web Annotator
 
-Capture a readable snapshot of any page, store it in Firestore, and annotate it. This guide is tailored for Vercel deployments with Firebase.
+A modern web application for capturing and annotating articles with a distraction-free reading experience.
 
-## Environment Setup
+## What It Does
 
-1. Copy `env.example` to `.env.local` and fill the values.
-2. Install dependencies and run locally:
+Web Annotator lets you save web articles in a clean, readable format and add your own notes and highlights. Think of it as a personal research library where you can:
+
+- Capture articles from any URL in a clean, reader-friendly format
+- Add notes and annotations as you read
+- Organize articles into projects
+- Customize your reading experience (font, size, theme)
+- Track your reading progress
+
+## Tech Stack
+
+- **Frontend**: Next.js 16, React 19, TypeScript, Tailwind CSS
+- **Backend**: Firebase (Authentication + Firestore)
+- **AI Integration**: BYOK chat providers + local CLI bridge support
+- **Deployment**: Optimized for Vercel
+
+## Quick Start
+
+### Prerequisites
+
+- Node.js 24.x
+- Firebase project with Firestore and Google Authentication enabled
+
+### Installation
+
+1. **Clone and install**
+
+   ```bash
+   git clone <repository-url>
+   cd web-annotator
+   npm install
+   ```
+
+2. **Set up environment variables**
+
+   ```bash
+   cp env.example .env.local
+   ```
+
+   Edit `.env.local` and add your Firebase credentials:
+
+   ```env
+   # Firebase Client Configuration
+   NEXT_PUBLIC_FIREBASE_API_KEY=your_api_key
+   NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=your_project.firebaseapp.com
+   NEXT_PUBLIC_FIREBASE_PROJECT_ID=your_project_id
+   NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=your_project.appspot.com
+   NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=your_sender_id
+   NEXT_PUBLIC_FIREBASE_APP_ID=your_app_id
+
+   # Firebase Admin (for local development)
+   FIREBASE_SERVICE_ACCOUNT_PATH=./firebase-service-account.json
+
+   # Optional: local CLI bridge endpoint for AI chat local mode
+   CLI_BRIDGE_URL=http://127.0.0.1:3456
+   ```
+
+3. **Run the development server**
+
+   ```bash
+   npm run dev
+   ```
+
+   Optional: start with local CLI chat bridge (`../cli-bridge`) for Codex/Claude/Gemini CLI:
+
+   ```bash
+   npm run dev:with-cli
+   ```
+
+4. **Open [http://localhost:3000](http://localhost:3000)**
+
+### Firebase Setup
+
+1. Create a Firebase project at [console.firebase.google.com](https://console.firebase.google.com/)
+2. Enable Google Sign-In in Authentication settings
+3. Create a Firestore database
+4. Download your service account JSON from Project Settings > Service Accounts
+5. Save it as `firebase-service-account.json` in the project root
+
+## Basic Usage
+
+### Importing Articles
+
+1. Sign in with your Google account
+2. Paste a URL into the input field on the home page
+3. Click "Import" to save the article
+
+### Reading and Annotating
+
+1. Click any article in your library to open the reader
+2. Use the toolbar to customize appearance:
+   - Adjust font size (XS to 2XL)
+   - Change font family (Sans, Serif, Mono)
+   - Switch theme (Light, Dark, Sepia)
+3. Click "Add Note" to create annotations
+4. Drag notes to position them anywhere on screen
+
+### Notes AI Chat
+
+1. In reader view, open the right sidebar and switch to **AI Chat**
+2. Pick a provider and model from the chat settings
+3. For cloud providers (OpenAI/Anthropic/Gemini/Gateway), paste your own API key (stored only in local browser storage)
+4. For local provider mode, run `../cli-bridge` or use `npm run dev:with-cli`
+5. Ask questions using article + note context
+
+### Organizing with Projects
+
+1. Create projects from the home page
+2. Assign articles to projects when importing or via the article menu
+3. Filter your library by project
+4. Mark articles as "In Progress" or "Read"
+
+## Development
+
+### Available Commands
 
 ```bash
-npm install
-npm run dev
+npm run dev          # Start development server
+npm run dev:with-cli # Start Next.js + local ../cli-bridge
+npm run cli-bridge   # Start only local ../cli-bridge
+npm run build        # Build for production
+npm run start        # Start production server
+npm run lint         # Run ESLint
+npm run format       # Format code with Prettier
+npm run type-check   # Check TypeScript types
 ```
 
-### Firebase Admin (server) credentials
+### Code Quality
 
-- Local-first: download the service account JSON (Firestore access) and set `FIREBASE_SERVICE_ACCOUNT_PATH` to its path (file is `.gitignore`d).
-- Vercel/serverless: files aren’t persisted, so set `FIREBASE_SERVICE_ACCOUNT_KEY` to a base64 of that JSON instead.
-  - macOS: `base64 firebase-service-account.json | tr -d '\n'`
-  - Linux: `base64 -w0 firebase-service-account.json`
+This project uses automated pre-commit hooks that run:
 
-### Firebase client config (browser)
+- Prettier (code formatting)
+- ESLint (code quality)
+- TypeScript (type checking)
 
-From **Firebase Console → Project Settings → General → Your apps**, add to `.env.local` / Vercel:
+Simply make your changes and commit - the hooks will ensure code quality automatically.
 
-- `NEXT_PUBLIC_FIREBASE_API_KEY`
-- `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN`
-- `NEXT_PUBLIC_FIREBASE_PROJECT_ID`
-- `NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET`
-- `NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID`
-- `NEXT_PUBLIC_FIREBASE_APP_ID`
+### Commit Convention
 
-## Deploying to Vercel
+We use [Conventional Commits](https://www.conventionalcommits.org/):
 
-1. Connect the repo in Vercel.
-2. Add the env vars above. Use `FIREBASE_SERVICE_ACCOUNT_KEY` (base64) because Vercel can’t read a local file. Recommended: `PLAYWRIGHT_BROWSERS_PATH=0` so Vercel bundles Chromium with the function.
-3. Deploy. No service-account file needs to be checked in—the server uses the env var when a file isn’t present.
+```
+<type>(<scope>): <description>
 
-## Feature Priority (ROI ÷ Effort)
+Examples:
+feat(reader): add PDF export
+fix(auth): resolve token refresh issue
+chore: update dependencies
+```
 
-| Rank | Feature                                                        | Why this order                                                                                            |
-| ---- | -------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
-| 1    | Ensure extraction works in hosted version                      |
-| 2    | Auth (after supabase)                                          | Unlocks saved work per user and is a prerequisite for collaboration; Firebase Auth keeps effort moderate. |
-| 3    | AI integration to add comments/ask questions                   | High differentiation with moderate effort once content is in Firestore; can be scoped to Q&A first.       |
-| 4    | Add PDFs/images and render as HTML                             | Expands core utility; moderate effort for parsing/upload but high value for research workflows.           |
-| 5    | Add YT video with timestamped comments                         | Useful but narrower audience; medium effort (player + time-based annotations).                            |
-| 6    | Collaboration project-wise                                     | Strong ROI but high complexity (permissions, concurrency), best after auth and grouping are solid.        |
-| 7    | Canvas relations linking documents across projects             | Visually compelling but highest complexity; build once data model and collaboration are stable.           |
-| 8    | Add option to export as markdown/pdf                           | Easy to implement and adds value for users.                                                               |
-| 9    | Vercel deployment with playwright                              |
-| 10   | Add a browser extension to add pages directly from the browser |
+## Deployment to Vercel
+
+1. Push your code to GitHub
+2. Import the project in Vercel
+3. Add environment variables in Vercel project settings:
+   - All `NEXT_PUBLIC_*` variables
+   - `FIREBASE_SERVICE_ACCOUNT_KEY` (base64-encoded service account JSON)
+
+To encode your service account for Vercel:
+
+```bash
+# macOS
+base64 firebase-service-account.json | tr -d '\n'
+
+# Linux
+base64 -w0 firebase-service-account.json
+```
+
+## Project Structure
+
+```
+web-annotator/
+├── src/
+│   ├── app/              # Next.js pages and API routes
+│   ├── components/       # React components
+│   ├── lib/              # Business logic and utilities
+│   └── types.ts          # TypeScript definitions
+├── public/               # Static assets
+├── AGENTS.md             # AI agent development guide
+└── README.md             # This file
+```
+
+## Features
+
+### Current
+
+- Clean article extraction using Mozilla Readability
+- Google Sign-In authentication
+- Per-user data isolation
+- Contextual annotations with optional DOM anchoring
+- AI chat in notes sidebar (BYOK + local CLI mode)
+- Project-based organization
+- Customizable reader (theme, font, size)
+- Reading progress tracking
+
+### Roadmap
+
+- PDF and image document support
+- YouTube videos with timestamped comments
+- Export to Markdown/PDF
+- Browser extension for quick capture
+- Collaboration features
+- Canvas view for linking related documents
+
+## Security
+
+- All HTML content is sanitized before storage
+- User authentication required for all operations
+- Per-user data isolation enforced at the database level
+- Ownership verification on all operations
+
+## For Developers
+
+For comprehensive development documentation including architecture, patterns, and technical decisions, see **[AGENTS.md](./AGENTS.md)**.
+
+## License
+
+This project is private and not licensed for public use.
+
+## Support
+
+For issues or questions, please open an issue on GitHub.
