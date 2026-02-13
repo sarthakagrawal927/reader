@@ -1,5 +1,5 @@
 import * as admin from 'firebase-admin';
-import { getFirestore } from 'firebase-admin/firestore';
+import { Firestore, getFirestore } from 'firebase-admin/firestore';
 
 type RawServiceAccount = admin.ServiceAccount & {
   project_id?: string;
@@ -46,10 +46,31 @@ const loadServiceAccount = (): admin.ServiceAccount => {
   }
 };
 
-// Prevent multiple initializations
-if (!admin.apps.length) {
-  const credential = admin.credential.cert(loadServiceAccount());
-  admin.initializeApp({ credential });
-}
+let initializationError: Error | null = null;
 
-export const db = getFirestore();
+export const ensureFirebaseAdmin = () => {
+  if (admin.apps.length) return;
+  if (initializationError) throw initializationError;
+
+  try {
+    const credential = admin.credential.cert(loadServiceAccount());
+    admin.initializeApp({ credential });
+  } catch (error) {
+    initializationError =
+      error instanceof Error ? error : new Error('Failed to initialize Firebase Admin SDK');
+    throw initializationError;
+  }
+};
+
+const getDb = (): Firestore => {
+  ensureFirebaseAdmin();
+  return getFirestore();
+};
+
+export const db = new Proxy({} as Firestore, {
+  get(_target, property) {
+    const firestore = getDb() as unknown as Record<PropertyKey, unknown>;
+    const value = firestore[property];
+    return typeof value === 'function' ? value.bind(firestore) : value;
+  },
+}) as Firestore;
