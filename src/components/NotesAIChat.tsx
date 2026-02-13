@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useCompletion } from '@ai-sdk/react';
 import { Bot, Loader2, Send, Settings, Square, Trash2, X } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
@@ -35,6 +36,16 @@ interface ModelDiscoveryResponse {
 }
 
 const MAX_SAVED_MESSAGES = 80;
+const SAVE_DEBOUNCE_MS = 750;
+
+const serializeMessages = (messages: AIChatMessage[]) =>
+  JSON.stringify(messages.map((message) => [message.role, message.content]));
+
+const includeSelectedModel = (selectedModel: string, modelIds: string[]) => {
+  if (!selectedModel) return modelIds;
+  if (modelIds.includes(selectedModel)) return modelIds;
+  return [selectedModel, ...modelIds];
+};
 
 const loadConfig = (allowLocalProviders: boolean): AIConfig => {
   if (typeof window === 'undefined') return DEFAULT_AI_CONFIG;
@@ -108,9 +119,11 @@ export function NotesAIChat({
   queuedPrompt = null,
   onQueuedPromptHandled,
 }: NotesAIChatProps) {
+  const queryClient = useQueryClient();
   const [input, setInput] = useState('');
   const [showSettings, setShowSettings] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isConfigLoaded, setIsConfigLoaded] = useState(false);
   const [allowLocalProviders, setAllowLocalProviders] = useState(false);
   const [config, setConfig] = useState<AIConfig>(DEFAULT_AI_CONFIG);
   const [messages, setMessages] = useState<AIChatMessage[]>([]);
@@ -124,6 +137,9 @@ export function NotesAIChat({
   const chatEndRef = useRef<HTMLDivElement>(null);
   const hasHydratedMessagesRef = useRef(false);
   const pendingHistoryRef = useRef<AIChatMessage[] | null>(null);
+  const skipNextPersistRef = useRef(true);
+  const lastPersistedMessagesRef = useRef('[]');
+  const latestMessagesRef = useRef<AIChatMessage[]>([]);
 
   const {
     completion,
@@ -165,23 +181,60 @@ export function NotesAIChat({
     const localProvidersAllowed = isLocalCLIEnabled();
     setAllowLocalProviders(localProvidersAllowed);
     setConfig(loadConfig(localProvidersAllowed));
+    setIsConfigLoaded(true);
   }, []);
 
   useEffect(() => {
-    setMessages(Array.isArray(article.aiChat) ? article.aiChat : []);
+    const hydratedMessages = Array.isArray(article.aiChat) ? article.aiChat : [];
+    const hydratedSignature = serializeMessages(hydratedMessages);
+    const localSignature = serializeMessages(latestMessagesRef.current);
+
+    if (hasHydratedMessagesRef.current && hydratedSignature === localSignature) {
+      return;
+    }
+
+    skipNextPersistRef.current = true;
+    pendingHistoryRef.current = null;
+    setCompletion('');
+    setMessages(hydratedMessages);
+    latestMessagesRef.current = hydratedMessages;
+    lastPersistedMessagesRef.current = hydratedSignature;
     hasHydratedMessagesRef.current = true;
-  }, [article.id, article.aiChat]);
+  }, [article.id, article.aiChat, setCompletion]);
 
   useEffect(() => {
+    latestMessagesRef.current = messages;
+  }, [messages]);
+
+  useEffect(() => {
+    if (!isConfigLoaded) return;
     persistConfig(config);
-  }, [config]);
+  }, [config, isConfigLoaded]);
+
+  useEffect(() => {
+    if (!hasHydratedMessagesRef.current) return;
+    if (skipNextPersistRef.current) return;
+    queryClient.setQueryData<Article>(['article', article.id], (previousArticle) => {
+      if (!previousArticle) return previousArticle;
+
+      const previousChat = Array.isArray(previousArticle.aiChat) ? previousArticle.aiChat : [];
+      if (serializeMessages(previousChat) === serializeMessages(messages)) {
+        return previousArticle;
+      }
+
+      return {
+        ...previousArticle,
+        aiChat: messages,
+      };
+    });
+  }, [article.id, messages, queryClient]);
 
   const persistMessagesToServer = useCallback(
-    async (nextMessages: AIChatMessage[]) => {
-      const payload = nextMessages.slice(-MAX_SAVED_MESSAGES);
+    async (payload: AIChatMessage[], keepalive = false) => {
       const response = await fetch(`/api/articles/${article.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
+        keepalive,
         body: JSON.stringify({ aiChat: payload }),
       });
       if (!response.ok) {
@@ -193,15 +246,44 @@ export function NotesAIChat({
 
   useEffect(() => {
     if (!hasHydratedMessagesRef.current) return;
+    if (skipNextPersistRef.current) {
+      skipNextPersistRef.current = false;
+      return;
+    }
+
+    const payload = messages.slice(-MAX_SAVED_MESSAGES);
+    const serializedPayload = serializeMessages(payload);
+    if (serializedPayload === lastPersistedMessagesRef.current) {
+      return;
+    }
 
     const timeoutId = setTimeout(() => {
-      void persistMessagesToServer(messages).catch((persistError) => {
-        setError(persistError instanceof Error ? persistError.message : 'Failed to save chat');
-      });
-    }, 750);
+      void persistMessagesToServer(payload)
+        .then(() => {
+          lastPersistedMessagesRef.current = serializedPayload;
+        })
+        .catch((persistError) => {
+          setError(persistError instanceof Error ? persistError.message : 'Failed to save chat');
+        });
+    }, SAVE_DEBOUNCE_MS);
 
     return () => clearTimeout(timeoutId);
   }, [messages, persistMessagesToServer]);
+
+  useEffect(
+    () => () => {
+      if (!hasHydratedMessagesRef.current) return;
+
+      const payload = latestMessagesRef.current.slice(-MAX_SAVED_MESSAGES);
+      const serializedPayload = serializeMessages(payload);
+      if (serializedPayload === lastPersistedMessagesRef.current) return;
+
+      void persistMessagesToServer(payload, true).catch(() => {
+        // Ignore cleanup errors when navigating away.
+      });
+    },
+    [persistMessagesToServer]
+  );
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -257,19 +339,9 @@ export function NotesAIChat({
             ? prioritizeStableModelIds(ids)
             : (FALLBACK_MODELS[config.provider] ?? [getDefaultModelForProvider(config.provider)]);
 
-        setAvailableModels(nextModels);
+        setAvailableModels(includeSelectedModel(config.model, nextModels));
         setModelSource(payload.source === 'live' ? 'live' : 'fallback');
         setModelError(payload.error ?? null);
-
-        setConfig((prev) => {
-          if (prev.provider !== config.provider) return prev;
-          if (nextModels.includes(prev.model)) return prev;
-
-          return {
-            ...prev,
-            model: nextModels[0] ?? getDefaultModelForProvider(prev.provider),
-          };
-        });
       } catch (fetchError) {
         if (controller.signal.aborted) return;
 
@@ -279,16 +351,7 @@ export function NotesAIChat({
         const fallbackModels = FALLBACK_MODELS[config.provider] ?? [
           getDefaultModelForProvider(config.provider),
         ];
-        setAvailableModels(fallbackModels);
-
-        setConfig((prev) => {
-          if (prev.provider !== config.provider) return prev;
-          if (fallbackModels.includes(prev.model)) return prev;
-          return {
-            ...prev,
-            model: fallbackModels[0] ?? getDefaultModelForProvider(prev.provider),
-          };
-        });
+        setAvailableModels(includeSelectedModel(config.model, fallbackModels));
       } finally {
         if (!controller.signal.aborted) {
           setIsModelsLoading(false);
@@ -299,7 +362,7 @@ export function NotesAIChat({
     fetchModels();
 
     return () => controller.abort();
-  }, [config.provider, config.apiKey]);
+  }, [config.provider, config.apiKey, config.model]);
 
   const isReady = useMemo(() => {
     if (isLocalAIProvider(config.provider)) return true;
