@@ -37,6 +37,10 @@ interface ModelDiscoveryResponse {
 
 const MAX_SAVED_MESSAGES = 80;
 const SAVE_DEBOUNCE_MS = 750;
+const LOCAL_CLI_DISABLED_MESSAGE =
+  'Local CLI providers are available only in development environments.';
+const LOCAL_CLI_BRIDGE_HOST = 'http://127.0.0.1:3456';
+const GENERIC_ERROR_MESSAGE = 'Something went wrong. Please try again.';
 
 const serializeMessages = (messages: AIChatMessage[]) =>
   JSON.stringify(messages.map((message) => [message.role, message.content]));
@@ -45,6 +49,89 @@ const includeSelectedModel = (selectedModel: string, modelIds: string[]) => {
   if (!selectedModel) return modelIds;
   if (modelIds.includes(selectedModel)) return modelIds;
   return [selectedModel, ...modelIds];
+};
+
+const toCompactErrorMessage = (error: unknown) => {
+  const message = error instanceof Error ? error.message : typeof error === 'string' ? error : '';
+  return message.replace(/\s+/g, ' ').trim().slice(0, 260);
+};
+
+const toUserFacingError = (
+  error: unknown,
+  provider: AIProvider,
+  context: 'chat' | 'persist' | 'models'
+) => {
+  const message = toCompactErrorMessage(error);
+  const lowerMessage = message.toLowerCase();
+
+  if (lowerMessage.includes('unauthorized')) {
+    return {
+      message: 'Your session expired. Refresh and sign in again.',
+      openSettings: false,
+    };
+  }
+
+  if (
+    lowerMessage.includes('api key') &&
+    (lowerMessage.includes('required') ||
+      lowerMessage.includes('missing') ||
+      lowerMessage.includes('invalid') ||
+      lowerMessage.includes('incorrect') ||
+      lowerMessage.includes('authentication'))
+  ) {
+    return {
+      message: `No API key found for ${PROVIDER_LABELS[provider]}. Add one in Chat settings.`,
+      openSettings: true,
+    };
+  }
+
+  if (lowerMessage.includes(LOCAL_CLI_DISABLED_MESSAGE.toLowerCase())) {
+    return {
+      message:
+        'Local CLI mode works only in local development. Switch to a cloud provider in deployed environments.',
+      openSettings: true,
+    };
+  }
+
+  if (
+    lowerMessage.includes('econnrefused') ||
+    lowerMessage.includes('127.0.0.1:3456') ||
+    lowerMessage.includes('failed to parse local stream')
+  ) {
+    return {
+      message: `CLI bridge is unreachable at ${LOCAL_CLI_BRIDGE_HOST}. Run \`npm run cli-bridge\` or switch provider.`,
+      openSettings: true,
+    };
+  }
+
+  if (context === 'persist') {
+    return {
+      message: message ? `Unable to save chat history: ${message}` : 'Unable to save chat history.',
+      openSettings: false,
+    };
+  }
+
+  if (
+    context === 'models' &&
+    lowerMessage.includes('live model discovery is currently available via vercel ai gateway only')
+  ) {
+    return {
+      message: 'Live model discovery works only for Vercel AI Gateway. Using fallback models.',
+      openSettings: false,
+    };
+  }
+
+  if (message) {
+    return {
+      message: `Something went wrong: ${message}`,
+      openSettings: false,
+    };
+  }
+
+  return {
+    message: GENERIC_ERROR_MESSAGE,
+    openSettings: false,
+  };
 };
 
 const loadConfig = (allowLocalProviders: boolean): AIConfig => {
@@ -159,7 +246,11 @@ export function NotesAIChat({
       return response;
     },
     onError: (streamError) => {
-      setError(streamError instanceof Error ? streamError.message : 'AI request failed');
+      const feedback = toUserFacingError(streamError, config.provider, 'chat');
+      setError(feedback.message);
+      if (feedback.openSettings) {
+        setShowSettings(true);
+      }
       pendingHistoryRef.current = null;
     },
     onFinish: (_prompt, finalCompletion) => {
@@ -263,12 +354,13 @@ export function NotesAIChat({
           lastPersistedMessagesRef.current = serializedPayload;
         })
         .catch((persistError) => {
-          setError(persistError instanceof Error ? persistError.message : 'Failed to save chat');
+          const feedback = toUserFacingError(persistError, config.provider, 'persist');
+          setError(feedback.message);
         });
     }, SAVE_DEBOUNCE_MS);
 
     return () => clearTimeout(timeoutId);
-  }, [messages, persistMessagesToServer]);
+  }, [config.provider, messages, persistMessagesToServer]);
 
   useEffect(
     () => () => {
@@ -346,7 +438,11 @@ export function NotesAIChat({
         if (controller.signal.aborted) return;
 
         setModelSource('fallback');
-        setModelError(fetchError instanceof Error ? fetchError.message : 'Failed to fetch models');
+        const feedback = toUserFacingError(fetchError, config.provider, 'models');
+        setModelError(feedback.message);
+        if (feedback.openSettings) {
+          setShowSettings(true);
+        }
 
         const fallbackModels = FALLBACK_MODELS[config.provider] ?? [
           getDefaultModelForProvider(config.provider),
@@ -385,7 +481,7 @@ export function NotesAIChat({
 
       if (!isReady) {
         setShowSettings(true);
-        setError(`Add an API key for ${PROVIDER_LABELS[config.provider]}.`);
+        setError(`No API key found for ${PROVIDER_LABELS[config.provider]}. Add one in settings.`);
         if (isQueuedMessage) {
           setInput(userMessage);
         }
@@ -414,7 +510,11 @@ export function NotesAIChat({
         });
       } catch (streamError) {
         if ((streamError as { name?: string })?.name !== 'AbortError') {
-          setError(streamError instanceof Error ? streamError.message : 'AI request failed');
+          const feedback = toUserFacingError(streamError, config.provider, 'chat');
+          setError(feedback.message);
+          if (feedback.openSettings) {
+            setShowSettings(true);
+          }
         }
         pendingHistoryRef.current = null;
       }
@@ -610,7 +710,11 @@ export function NotesAIChat({
       </div>
 
       <div className="border-t border-gray-800 bg-gray-900/70 p-3">
-        {error && <p className="mb-2 text-xs text-red-400">{error}</p>}
+        {error && (
+          <p className="mb-2 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-200">
+            {error}
+          </p>
+        )}
         <div className="flex items-end gap-2">
           <textarea
             value={input}
