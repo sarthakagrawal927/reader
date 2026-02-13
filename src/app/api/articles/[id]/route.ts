@@ -14,6 +14,14 @@ import { getAuthenticatedUserId } from '../../../../lib/auth-api';
 const normalizeStatus = (status: unknown): ArticleStatus | null =>
   status === 'read' || status === 'in_progress' ? status : null;
 
+const LOCAL_ONLY_AI_SETTINGS_FIELDS = new Set([
+  'provider',
+  'model',
+  'apiKey',
+  'systemPrompt',
+  'aiConfig',
+]);
+
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const userId = await getAuthenticatedUserId();
@@ -48,7 +56,24 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
     }
 
     const body = await request.json();
-    const { notes, aiChat, title, status, projectId } = body || {};
+    if (typeof body !== 'object' || body === null) {
+      return NextResponse.json({ error: 'Invalid request body' }, { status: 400 });
+    }
+
+    const payload = body as Record<string, unknown>;
+    const localOnlyField = Object.keys(payload).find((key) =>
+      LOCAL_ONLY_AI_SETTINGS_FIELDS.has(key)
+    );
+    if (localOnlyField) {
+      return NextResponse.json(
+        {
+          error: `${localOnlyField} is local-only and must not be sent to article persistence.`,
+        },
+        { status: 400 }
+      );
+    }
+
+    const { notes, aiChat, title, status, projectId } = payload;
 
     const docRef = db.collection('annotations').doc(id);
     const updateData: Record<string, unknown> = {
