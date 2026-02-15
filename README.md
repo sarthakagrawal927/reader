@@ -3,7 +3,15 @@
 ![AI Generated](https://ai-percentage-pin.vercel.app/api/ai-percentage?value=80)
 ![AI PRs Welcome](https://ai-percentage-pin.vercel.app/api/ai-prs?welcome=yes)
 
-A modern web application for capturing and annotating articles with a distraction-free reading experience.
+A modern web app for capturing and annotating articles with a distraction-free reading experience.
+
+## Test Notes
+
+This section exists to trigger the AI review workflow.
+
+- Added a temporary action pin update for validation.
+- Added this documentation block to create multiple changed lines.
+- This PR should receive inline comments on each changed line.
 
 ## Problem
 
