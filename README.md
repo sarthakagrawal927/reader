@@ -9,7 +9,7 @@ A modern web app for capturing and annotating articles with a distraction-free r
 
 This section exists to trigger the AI review workflow.
 
-- Added a temporary action pin update for validation.
+- Using this PR to validate inline review comments on changed lines.
 - Added this documentation block to create multiple changed lines.
 - This PR should receive inline comments on each changed line.
 
